@@ -327,6 +327,9 @@ public sealed class SqlServerSink : SinkBase
     private bool _schemaReady;
     public override string Name => "SQL Server";
 
+    /// <summary>마지막 연결·기록 시도가 성공했는지. 실패 중이어도 큐에 쌓아 두고 재시도를 계속한다.</summary>
+    public bool IsConnected { get; private set; }
+
     public SqlServerSink(string connectionString, string table, bool autoCreate, string queueFolder)
     {
         _connectionString = connectionString;
@@ -351,19 +354,22 @@ public sealed class SqlServerSink : SinkBase
         try
         {
             await EnsureSchemaAsync(ct);
+            IsConnected = true;
             Status = $"연결 확인, 테이블 {_table} / {_hostTable}";
         }
         catch (Exception ex)
         {
+            IsConnected = false;
             Status = "연결 안 됨, 큐에 보관 중 - " + ex.Message;
             Log.Warning("SQL 싱크 초기 연결 실패: {Msg}", ex.Message);
         }
         _queue = new OutboxQueue(_queueFolder, "sql", SendAsync);
         _queue.Changed += q =>
         {
-            if (q.LastError is not null) Status = $"연결 안 됨, 대기 {q.Pending} - {q.LastError}";
-            else if (q.Pending > 0) Status = $"전송 중, 대기 {q.Pending}";
-            else if (q.LastSentAt is DateTimeOffset t) Status = $"마지막 기록 {t:HH:mm:ss}, 테이블 {_table}";
+            // IsConnected 를 Status 보다 먼저 바꿔야 StatusChanged 를 받는 쪽이 새 값을 본다.
+            if (q.LastError is not null) { IsConnected = false; Status = $"연결 안 됨, 대기 {q.Pending} - {q.LastError}"; }
+            else if (q.Pending > 0) { IsConnected = true; Status = $"전송 중, 대기 {q.Pending}"; }
+            else if (q.LastSentAt is DateTimeOffset t) { IsConnected = true; Status = $"마지막 기록 {t:HH:mm:ss}, 테이블 {_table}"; }
         };
     }
 

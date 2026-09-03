@@ -112,7 +112,8 @@
                         </Ellipse.Style>
                     </Ellipse>
                     <TextBlock Text="{Binding ServiceStatus}" VerticalAlignment="Center" Foreground="#444"/>
-                    <TextBlock Text="{Binding AppVersion, StringFormat=' v{0}'}" VerticalAlignment="Center" Foreground="#999" Margin="12,0,0,0"/>
+                    <TextBlock Text="{Binding AppVersion, StringFormat=' v{0}'}" VerticalAlignment="Center" Foreground="#999" Margin="12,0,12,0"/>
+                    <Button Content="업데이트 확인" Command="{Binding CheckUpdateCommand}" Margin="0"/>
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -606,12 +607,16 @@
                                             <TextBox Text="{Binding PipeName}" Width="200"/>
                                         </StackPanel>
 
-                                        <CheckBox Grid.Row="4" Content="SQL Server" IsChecked="{Binding SqlEnabled}"/>
+                                        <TextBlock Grid.Row="4" Text="SQL Server 에 기록" Style="{StaticResource Label}"
+                                                   ToolTip="이벤트는 이벤트 테이블에 INSERT, 상태 메시지는 호스트 테이블에 MERGE 합니다. 끊기면 로컬 큐에 보관했다가 다시 붙으면 순서대로 기록합니다."/>
                                         <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding SqlConnectionString}" Margin="0,2" FontFamily="Consolas" FontSize="11"/>
                                         <TextBlock Grid.Row="5" Text="   테이블" Style="{StaticResource Label}"/>
                                         <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal">
                                             <TextBox Text="{Binding SqlTable}" Width="200" Margin="0,2,12,2"/>
-                                            <CheckBox Content="없으면 자동 생성" IsChecked="{Binding SqlAutoCreate}"/>
+                                            <CheckBox Content="없으면 자동 생성" IsChecked="{Binding SqlAutoCreate}" Margin="0,0,12,0"/>
+                                            <Button Content="{Binding SqlButtonText}" Command="{Binding ToggleSqlCommand}" MinWidth="90" Margin="0,2,12,2"
+                                                    ToolTip="누르면 바로 저장되고 적용됩니다. 켜진 뒤에는 끊겨도 자동으로 재접속합니다."/>
+                                            <TextBlock Text="{Binding SqlStatusText}" Foreground="{Binding SqlStatusColor}" Style="{StaticResource Label}" VerticalAlignment="Center"/>
                                         </StackPanel>
                                     </Grid>
                                     <TextBlock Text="출력 상태" Style="{StaticResource Head}"/>
@@ -653,7 +658,10 @@
                                 </StackPanel>
                             </GroupBox>
 
-                            <Button Content="설정 저장 및 출력 재구성" HorizontalAlignment="Left" Padding="14,6" Command="{Binding SaveSettingsCommand}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <TextBlock Text="모든 항목은 바꾸는 즉시 저장·적용됩니다." Style="{StaticResource Label}"/>
+                                <TextBlock Text="{Binding LastSavedText}" Style="{StaticResource Label}" Foreground="#2E7D32" Margin="8,2,0,2"/>
+                            </StackPanel>
                         </StackPanel>
                     </ScrollViewer>
                 </TabItem>

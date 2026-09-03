@@ -55,6 +55,7 @@ public sealed partial class CollectorViewModel : ObservableObject, IAsyncDisposa
 
     public int Port { get; }
     public int StaleAfterSec { get; set; } = 180;
+    public string AppVersion => typeof(CollectorViewModel).Assembly.GetName().Version?.ToString(3) ?? "?";
 
     public ObservableCollection<HostTileViewModel> Hosts { get; } = new();
     public ObservableCollection<TagEvent> Events { get; } = new();
@@ -206,6 +207,9 @@ public sealed partial class CollectorViewModel : ObservableObject, IAsyncDisposa
 
     [RelayCommand]
     private void ClearEvents() => Events.Clear();
+
+    [RelayCommand]
+    private Task CheckUpdate() => UpdateFlow.RunAsync(msg => StatusMessage = msg);
 
     [RelayCommand]
     private void OpenCsvFolder()

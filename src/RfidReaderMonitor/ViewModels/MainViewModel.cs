@@ -195,6 +195,11 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _sqlConnectionString = "";
     [ObservableProperty] private string _sqlTable = "";
     [ObservableProperty] private bool _sqlAutoCreate;
+    // SQL Server 기록도 수집 PC 전송과 같은 버튼 + 옆 상태 패턴
+    [ObservableProperty] private string _sqlButtonText = "기록 시작";
+    [ObservableProperty] private string _sqlStatusText = "꺼짐";
+    [ObservableProperty] private string _sqlStatusColor = "#888888";
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(ToggleSqlCommand))] private bool _sqlCanToggle;
     [ObservableProperty] private bool _tcpClientEnabled;
     [ObservableProperty] private string _tcpClientHost = "";
     [ObservableProperty] private int _tcpClientPort;
@@ -309,6 +314,13 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void LoadSettingsToProperties()
     {
+        _loadingSettings = true; // 초기 로드 중에는 속성 변경이 저장을 유발하지 않게
+        try { LoadSettingsCore(); }
+        finally { _loadingSettings = false; }
+    }
+
+    private void LoadSettingsCore()
+    {
         RemovalDebounceMs = _settings.RemovalDebounceMs;
         ReverseIso15693 = _settings.ReverseIso15693Uid;
         BeepOnAppear = _settings.BeepOnAppear;
@@ -367,12 +379,30 @@ public sealed partial class MainViewModel : ObservableObject
             : $"이 리더(제조사 {r.Vendor})에 맞는 제조사 도구가 없습니다. 표준 PC/SC 기능은 모두 사용할 수 있습니다.";
     }
 
-    partial void OnRemovalDebounceMsChanged(int value) => _tracker.RemovalDebounceMs = Math.Max(0, value);
-    partial void OnReverseIso15693Changed(bool value) => _tracker.ReverseIso15693 = value;
-    partial void OnLogRawEventsChanged(bool value) => _rawLogger.Enabled = value;
-    partial void OnTcpClientHostChanged(string value) => UpdateTcpClientUi();
-    partial void OnTcpClientPortChanged(int value) => UpdateTcpClientUi();
-    partial void OnTcpClientEnabledChanged(bool value) => UpdateTcpClientUi();
+    // 모든 설정 항목은 바뀌는 즉시(0.5초 뒤 한 번에) 저장·적용된다. 저장 버튼은 없다.
+    partial void OnRemovalDebounceMsChanged(int value) { _tracker.RemovalDebounceMs = Math.Max(0, value); ScheduleSettingsSave(); }
+    partial void OnReverseIso15693Changed(bool value) { _tracker.ReverseIso15693 = value; ScheduleSettingsSave(); }
+    partial void OnLogRawEventsChanged(bool value) { _rawLogger.Enabled = value; ScheduleSettingsSave(); }
+    partial void OnBeepOnAppearChanged(bool value) => ScheduleSettingsSave();
+    partial void OnMinimizeToTrayChanged(bool value) => ScheduleSettingsSave();
+    partial void OnStartMinimizedChanged(bool value) => ScheduleSettingsSave();
+    partial void OnLogFolderChanged(string value) => ScheduleSettingsSave();
+    partial void OnCsvEnabledChanged(bool value) => ScheduleSettingsSave();
+    partial void OnCsvFolderChanged(string value) => ScheduleSettingsSave();
+    partial void OnTcpEnabledChanged(bool value) => ScheduleSettingsSave();
+    partial void OnTcpPortChanged(int value) => ScheduleSettingsSave();
+    partial void OnPipeEnabledChanged(bool value) => ScheduleSettingsSave();
+    partial void OnPipeNameChanged(string value) => ScheduleSettingsSave();
+    partial void OnHeartbeatSecChanged(int value) => ScheduleSettingsSave();
+    partial void OnTestDurationSecChanged(int value) => ScheduleSettingsSave();
+    partial void OnTestIntervalMsChanged(int value) => ScheduleSettingsSave();
+    partial void OnTcpClientHostChanged(string value) { UpdateTcpClientUi(); ScheduleSettingsSave(); }
+    partial void OnTcpClientPortChanged(int value) { UpdateTcpClientUi(); ScheduleSettingsSave(); }
+    partial void OnTcpClientEnabledChanged(bool value) { UpdateTcpClientUi(); ScheduleSettingsSave(); }
+    partial void OnSqlConnectionStringChanged(string value) { UpdateSqlUi(); ScheduleSettingsSave(); }
+    partial void OnSqlTableChanged(string value) { UpdateSqlUi(); ScheduleSettingsSave(); }
+    partial void OnSqlAutoCreateChanged(bool value) { UpdateSqlUi(); ScheduleSettingsSave(); }
+    partial void OnSqlEnabledChanged(bool value) { UpdateSqlUi(); ScheduleSettingsSave(); }
 
     partial void OnAutostartEnabledChanged(bool value)
     {
@@ -640,6 +670,9 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private Task CheckUpdate() => UpdateFlow.RunAsync(msg => StatusMessage = msg);
+
+    [RelayCommand]
     private void RestoreScPnp()
     {
         var ok = SystemChecks.ApplyScPnpRestore();
@@ -685,9 +718,34 @@ public sealed partial class MainViewModel : ObservableObject
 
     // ------------------------------------------------------------ 명령: 설정/싱크
 
+    private Timer? _settingsSaveTimer;
+    private bool _loadingSettings;
+    [ObservableProperty] private string _lastSavedText = "";
+
+    /// <summary>설정 값이 바뀐 뒤 0.5초 동안 추가 변경이 없으면 저장·적용. 연속 입력은 한 번으로 합친다.</summary>
+    private void ScheduleSettingsSave()
+    {
+        if (_loadingSettings) return;
+        _settingsSaveTimer?.Dispose();
+        _settingsSaveTimer = new Timer(_ => _ui.BeginInvoke(async () => await SaveSettings()), null, 500, Timeout.Infinite);
+    }
+
+    /// <summary>출력(싱크) 구성에 영향을 주는 설정만 모은 서명. 바뀌었을 때만 싱크를 재구성한다.</summary>
+    private string SinkSignature() => string.Join("|",
+        _settings.Csv.Enabled, _settings.EffectiveCsvFolder,
+        _settings.Tcp.Enabled, _settings.Tcp.Port,
+        _settings.Pipe.Enabled, _settings.Pipe.Name,
+        _settings.TcpClient.Enabled, _settings.TcpClient.Host, _settings.TcpClient.Port,
+        _settings.Sql.Enabled, _settings.Sql.ConnectionString, _settings.Sql.Table, _settings.Sql.AutoCreateTable);
+
     [RelayCommand]
     private async Task SaveSettings()
     {
+        _settingsSaveTimer?.Dispose();
+        _settingsSaveTimer = null;
+        var sinkSigBefore = SinkSignature();
+        var heartbeatBefore = _settings.HeartbeatSec;
+
         _settings.RemovalDebounceMs = Math.Max(0, RemovalDebounceMs);
         _settings.ReverseIso15693Uid = ReverseIso15693;
         _settings.BeepOnAppear = BeepOnAppear;
@@ -713,9 +771,13 @@ public sealed partial class MainViewModel : ObservableObject
         _settings.TestIntervalMs = TestIntervalMs;
         SettingsStore.Save(_settings);
         if (AutostartEnabled) SystemChecks.SetAutostart(true, StartMinimized);
-        await ApplySinksAsync();
-        RestartHeartbeatTimer();
-        StatusMessage = "설정 저장 및 출력 재구성 완료";
+
+        var sinksChanged = SinkSignature() != sinkSigBefore;
+        if (sinksChanged) await ApplySinksAsync();
+        if (_settings.HeartbeatSec != heartbeatBefore) RestartHeartbeatTimer();
+
+        LastSavedText = $"저장됨 {DateTime.Now:HH:mm:ss}" + (sinksChanged ? " · 출력 재구성" : "");
+        StatusMessage = "설정 " + LastSavedText;
     }
 
     /// <summary>
@@ -752,21 +814,51 @@ public sealed partial class MainViewModel : ObservableObject
         TcpClientButtonText = !saved.Enabled ? "전송 시작" : changed ? "바꾼 주소로 다시 시작" : "전송 중지";
 
         var sink = _dispatcher.Sinks.OfType<TcpClientSink>().FirstOrDefault();
-        if (sink is null)
+        (TcpClientStatusText, TcpClientStatusColor) = SinkStatusView(saved.Enabled, sink, sink?.IsConnected ?? false);
+    }
+
+    /// <summary>SQL Server 기록 버튼. 수집 PC 전송 버튼과 같은 동작(켜기 / 끄기 / 바꾼 설정으로 다시 시작).</summary>
+    [RelayCommand(CanExecute = nameof(SqlCanToggle))]
+    private async Task ToggleSql()
+    {
+        var saved = _settings.Sql;
+        if (!saved.Enabled || SqlSettingsChanged())
         {
-            TcpClientStatusText = saved.Enabled ? "시작 안 됨" : "꺼짐";
-            TcpClientStatusColor = "#888888";
-        }
-        else if (sink.IsConnected)
-        {
-            TcpClientStatusText = "● " + sink.Status;
-            TcpClientStatusColor = "#2E7D32";
+            if (string.IsNullOrWhiteSpace(SqlConnectionString)) { StatusMessage = "SQL Server 연결 문자열을 입력하세요."; return; }
+            SqlEnabled = true;
         }
         else
         {
-            TcpClientStatusText = "○ " + sink.Status;
-            TcpClientStatusColor = "#C77700";
+            SqlEnabled = false;
         }
+        await SaveSettings();
+        StatusMessage = SqlEnabled ? $"SQL Server 기록 시작: 테이블 {_settings.Sql.Table}" : "SQL Server 기록 중지";
+        UpdateSqlUi();
+    }
+
+    private bool SqlSettingsChanged()
+    {
+        var saved = _settings.Sql;
+        return SqlConnectionString.Trim() != saved.ConnectionString
+            || SqlTable.Trim() != saved.Table
+            || SqlAutoCreate != saved.AutoCreateTable;
+    }
+
+    private void UpdateSqlUi()
+    {
+        var saved = _settings.Sql;
+        SqlCanToggle = saved.Enabled || !string.IsNullOrWhiteSpace(SqlConnectionString);
+        SqlButtonText = !saved.Enabled ? "기록 시작" : SqlSettingsChanged() ? "바꾼 설정으로 다시 시작" : "기록 중지";
+
+        var sink = _dispatcher.Sinks.OfType<SqlServerSink>().FirstOrDefault();
+        (SqlStatusText, SqlStatusColor) = SinkStatusView(saved.Enabled, sink, sink?.IsConnected ?? false);
+    }
+
+    /// <summary>버튼 옆 상태 글자와 색. 회색 = 꺼짐/시작 안 됨, 녹색 = 붙어 있음, 주황 = 끊겨서 재시도 중.</summary>
+    private static (string Text, string Color) SinkStatusView(bool enabled, SinkBase? sink, bool connected)
+    {
+        if (sink is null) return (enabled ? "시작 안 됨" : "꺼짐", "#888888");
+        return connected ? ("● " + sink.Status, "#2E7D32") : ("○ " + sink.Status, "#C77700");
     }
 
     private async Task ApplySinksAsync()
@@ -792,6 +884,7 @@ public sealed partial class MainViewModel : ObservableObject
             {
                 row.Status = sink.Status;
                 if (sink is TcpClientSink) UpdateTcpClientUi();
+                else if (sink is SqlServerSink) UpdateSqlUi();
             });
         }
         await _dispatcher.ReconfigureAsync(sinks);
@@ -807,6 +900,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         RefreshDashboardSinks();
         UpdateTcpClientUi();
+        UpdateSqlUi();
     }
 
     // ------------------------------------------------------------ 명령: 인식률 시험

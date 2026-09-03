@@ -28,9 +28,14 @@ public partial class App : Application
     private TaskbarIcon? _tray;
     private CollectorViewModel? _collector;
 
+    /// <summary>업데이트 후 같은 모양으로 다시 실행하기 위한 원래 명령행 인자.</summary>
+    public IReadOnlyList<string> RestartArgs { get; private set; } = Array.Empty<string>();
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        RestartArgs = e.Args.ToArray();
+        Sys.UpdateService.CleanupBackup();
 
         var settings = SettingsStore.Load();
         bool collectorMode = e.Args.Any(a => a.Equals("--collector", StringComparison.OrdinalIgnoreCase));
