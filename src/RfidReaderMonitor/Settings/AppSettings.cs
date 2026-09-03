@@ -31,6 +31,14 @@ public sealed class PipeSinkSettings
     public string Name { get; set; } = "RfidReaderMonitor";
 }
 
+/// <summary>수집 서버(수집 모드로 띄운 이 프로그램)로 이벤트·하트비트를 보내는 클라이언트.</summary>
+public sealed class TcpClientSinkSettings
+{
+    public bool Enabled { get; set; }
+    public string Host { get; set; } = "";
+    public int Port { get; set; } = 9760;
+}
+
 public sealed class SqlSinkSettings
 {
     public bool Enabled { get; set; }
@@ -61,8 +69,18 @@ public sealed class AppSettings
 
     public CsvSinkSettings Csv { get; set; } = new();
     public TcpSinkSettings Tcp { get; set; } = new();
+    public TcpClientSinkSettings TcpClient { get; set; } = new();
     public PipeSinkSettings Pipe { get; set; } = new();
     public SqlSinkSettings Sql { get; set; } = new();
+
+    /// <summary>하트비트(상태 메시지) 주기. 0이면 끔.</summary>
+    public int HeartbeatSec { get; set; } = 60;
+
+    /// <summary>--collector 로 띄울 때 기본 대기 포트.</summary>
+    public int CollectorPort { get; set; } = 9760;
+
+    [JsonIgnore]
+    public string EffectiveQueueFolder => Path.Combine(SettingsStore.AppDataFolder, "queue");
 
     [JsonIgnore]
     public string EffectiveLogFolder => string.IsNullOrWhiteSpace(LogFolder) ? SettingsStore.DefaultLogFolder : LogFolder;

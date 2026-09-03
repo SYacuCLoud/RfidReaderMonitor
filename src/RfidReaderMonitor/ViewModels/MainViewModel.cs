@@ -71,6 +71,7 @@ public sealed partial class MainViewModel : ObservableObject
         var online = Readers.Count(r => r.IsOnline);
         DashReaders = $"{online} / {total}";
         DashPresent = Readers.Count(r => r.State is PresenceState.Present or PresenceState.InUse or PresenceState.Mute);
+        ScheduleHeartbeatSoon();
     }
 
     private void RefreshDashboardEvent(TagEvent ev)
@@ -194,6 +195,10 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _sqlConnectionString = "";
     [ObservableProperty] private string _sqlTable = "";
     [ObservableProperty] private bool _sqlAutoCreate;
+    [ObservableProperty] private bool _tcpClientEnabled;
+    [ObservableProperty] private string _tcpClientHost = "";
+    [ObservableProperty] private int _tcpClientPort;
+    [ObservableProperty] private int _heartbeatSec;
     [ObservableProperty] private bool _autostartEnabled;
 
     // 제조사 도구 (선택 리더의 제조사에 맞는 뷰모델, 없으면 null)
@@ -262,6 +267,39 @@ public sealed partial class MainViewModel : ObservableObject
         CheckSystem();
         await ApplySinksAsync();
         _provider.Start();
+        RestartHeartbeatTimer();
+    }
+
+    // ------------------------------------------------------------ 하트비트 (상태 메시지)
+
+    private DispatcherTimer? _heartbeatTimer;
+    private Timer? _heartbeatSoonTimer;
+
+    private void RestartHeartbeatTimer()
+    {
+        _heartbeatTimer?.Stop();
+        _heartbeatTimer = null;
+        if (_settings.HeartbeatSec <= 0) return;
+        _heartbeatTimer = new DispatcherTimer(TimeSpan.FromSeconds(_settings.HeartbeatSec), DispatcherPriority.Background,
+            (_, _) => SendHeartbeat(), _ui);
+        _heartbeatTimer.Start();
+        SendHeartbeat();
+    }
+
+    /// <summary>리더 상태가 바뀌면 1초 안에 한 번 더 보낸다 (연속 변화는 하나로 합침).</summary>
+    private void ScheduleHeartbeatSoon()
+    {
+        if (_settings.HeartbeatSec <= 0) return;
+        _heartbeatSoonTimer?.Dispose();
+        _heartbeatSoonTimer = new Timer(_ => _ui.BeginInvoke(SendHeartbeat), null, 1000, Timeout.Infinite);
+    }
+
+    private void SendHeartbeat()
+    {
+        if (_dispatcher.Sinks.Count == 0) return;
+        var readers = Readers.Select(r => new HeartbeatReader(r.Name, r.Alias, r.Serial, r.StateText, r.Uid)).ToList();
+        var hb = new HeartbeatMessage(DateTimeOffset.Now, Environment.MachineName, AppVersion, readers, DashAppearToday, DashRemoveToday);
+        _dispatcher.PublishHeartbeat(hb);
     }
 
     private void LoadSettingsToProperties()
@@ -283,6 +321,10 @@ public sealed partial class MainViewModel : ObservableObject
         SqlConnectionString = _settings.Sql.ConnectionString;
         SqlTable = _settings.Sql.Table;
         SqlAutoCreate = _settings.Sql.AutoCreateTable;
+        TcpClientEnabled = _settings.TcpClient.Enabled;
+        TcpClientHost = _settings.TcpClient.Host;
+        TcpClientPort = _settings.TcpClient.Port;
+        HeartbeatSec = _settings.HeartbeatSec;
         TestDurationSec = _settings.TestDurationSec;
         TestIntervalMs = _settings.TestIntervalMs;
         AutostartEnabled = SystemChecks.IsAutostartEnabled();
@@ -655,11 +697,16 @@ public sealed partial class MainViewModel : ObservableObject
         _settings.Sql.ConnectionString = SqlConnectionString.Trim();
         _settings.Sql.Table = SqlTable.Trim();
         _settings.Sql.AutoCreateTable = SqlAutoCreate;
+        _settings.TcpClient.Enabled = TcpClientEnabled;
+        _settings.TcpClient.Host = TcpClientHost.Trim();
+        _settings.TcpClient.Port = TcpClientPort;
+        _settings.HeartbeatSec = Math.Max(0, HeartbeatSec);
         _settings.TestDurationSec = TestDurationSec;
         _settings.TestIntervalMs = TestIntervalMs;
         SettingsStore.Save(_settings);
         if (AutostartEnabled) SystemChecks.SetAutostart(true, StartMinimized);
         await ApplySinksAsync();
+        RestartHeartbeatTimer();
         StatusMessage = "설정 저장 및 출력 재구성 완료";
     }
 
@@ -669,9 +716,11 @@ public sealed partial class MainViewModel : ObservableObject
         if (_settings.Csv.Enabled) sinks.Add(new CsvEventSink(_settings.EffectiveCsvFolder));
         if (_settings.Tcp.Enabled) sinks.Add(new TcpBroadcastSink(_settings.Tcp.Port));
         if (_settings.Pipe.Enabled && !string.IsNullOrWhiteSpace(_settings.Pipe.Name)) sinks.Add(new NamedPipeSink(_settings.Pipe.Name));
+        if (_settings.TcpClient.Enabled && !string.IsNullOrWhiteSpace(_settings.TcpClient.Host))
+            sinks.Add(new TcpClientSink(_settings.TcpClient.Host, _settings.TcpClient.Port, _settings.EffectiveQueueFolder));
         if (_settings.Sql.Enabled && !string.IsNullOrWhiteSpace(_settings.Sql.ConnectionString))
         {
-            try { sinks.Add(new SqlServerSink(_settings.Sql.ConnectionString, _settings.Sql.Table, _settings.Sql.AutoCreateTable)); }
+            try { sinks.Add(new SqlServerSink(_settings.Sql.ConnectionString, _settings.Sql.Table, _settings.Sql.AutoCreateTable, _settings.EffectiveQueueFolder)); }
             catch (Exception ex) { StatusMessage = "SQL 싱크 구성 오류: " + ex.Message; }
         }
 

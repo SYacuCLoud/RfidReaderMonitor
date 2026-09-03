@@ -1,7 +1,6 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Threading;
 using Hardcodet.Wpf.TaskbarNotification;
 using RfidReaderMonitor.Core;
 using RfidReaderMonitor.Output;
@@ -17,6 +16,7 @@ public partial class App : Application
 {
     private const string MutexName = @"Local\RfidReaderMonitor.SingleInstance";
     private const string ShowEventName = @"Local\RfidReaderMonitor.Show";
+    private const string CollectorMutexName = @"Local\RfidReaderMonitor.Collector.SingleInstance";
 
     private Mutex? _mutex;
     private EventWaitHandle? _showEvent;
@@ -26,30 +26,23 @@ public partial class App : Application
     private MainViewModel? _vm;
     private MainWindow? _window;
     private TaskbarIcon? _tray;
+    private CollectorViewModel? _collector;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        // 단일 인스턴스
-        _mutex = new Mutex(true, MutexName, out var isNew);
-        _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
-        if (!isNew)
-        {
-            _showEvent.Set();
-            Shutdown();
-            return;
-        }
-
         var settings = SettingsStore.Load();
+        bool collectorMode = e.Args.Any(a => a.Equals("--collector", StringComparison.OrdinalIgnoreCase));
+
         Directory.CreateDirectory(settings.EffectiveLogFolder);
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
-            .WriteTo.File(Path.Combine(settings.EffectiveLogFolder, "app-.log"),
+            .WriteTo.File(Path.Combine(settings.EffectiveLogFolder, collectorMode ? "collector-.log" : "app-.log"),
                 rollingInterval: RollingInterval.Day, retainedFileCountLimit: 30,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
             .CreateLogger();
-        Log.Information("시작 v{Version}", typeof(App).Assembly.GetName().Version);
+        Log.Information("시작 v{Version} {Mode}", typeof(App).Assembly.GetName().Version, collectorMode ? "(수집 모드)" : "");
 
         DispatcherUnhandledException += (_, ex) =>
         {
@@ -59,6 +52,22 @@ public partial class App : Application
         };
         TaskScheduler.UnobservedTaskException += (_, ex) => { Log.Error(ex.Exception, "미관찰 Task 예외"); ex.SetObserved(); };
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log.Fatal(ex.ExceptionObject as Exception, "치명적 예외");
+
+        if (collectorMode)
+        {
+            StartCollector(e.Args, settings);
+            return;
+        }
+
+        // 단일 인스턴스 (감시 모드)
+        _mutex = new Mutex(true, MutexName, out var isNew);
+        _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+        if (!isNew)
+        {
+            _showEvent.Set();
+            Shutdown();
+            return;
+        }
 
         _provider = new PcscReaderProvider();
         var provider = _provider;
@@ -79,7 +88,6 @@ public partial class App : Application
         var startMinimized = settings.StartMinimized || e.Args.Any(a => a.Equals("--minimized", StringComparison.OrdinalIgnoreCase));
         if (!startMinimized) _window.Show();
 
-        // 두 번째 인스턴스가 보낸 "창 보이기" 신호 대기
         var showEvent = _showEvent;
         var t = new Thread(() =>
         {
@@ -91,6 +99,29 @@ public partial class App : Application
         t.Start();
 
         await _vm.InitializeAsync();
+    }
+
+    /// <summary>--collector [포트]: 여러 감시 PC가 보내는 이벤트·하트비트를 받아 보여 주는 모드.</summary>
+    private void StartCollector(string[] args, AppSettings settings)
+    {
+        int port = settings.CollectorPort;
+        int idx = Array.FindIndex(args, a => a.Equals("--collector", StringComparison.OrdinalIgnoreCase));
+        if (idx >= 0 && idx + 1 < args.Length && int.TryParse(args[idx + 1], out var p)) port = p;
+
+        _mutex = new Mutex(true, CollectorMutexName, out var isNew);
+        if (!isNew)
+        {
+            MessageBox.Show("수집 모드가 이미 실행 중입니다.", "RFID Reader Monitor", MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+
+        _collector = new CollectorViewModel(port, Dispatcher);
+        var win = new CollectorWindow(_collector);
+        MainWindow = win;
+        win.Closed += (_, _) => Shutdown();
+        win.Show();
+        _collector.Start();
     }
 
     private void SetupTray()
@@ -133,8 +164,9 @@ public partial class App : Application
             _tray?.Dispose();
             _provider?.Stop();
             _tracker?.Dispose();
-            if (_dispatcher is not null) _dispatcher.DisposeAsync().AsTask().Wait(3000);
+            if (_dispatcher is not null) _dispatcher.DisposeAsync().AsTask().Wait(5000);
             _provider?.Dispose();
+            if (_collector is not null) _collector.DisposeAsync().AsTask().Wait(3000);
         }
         catch (Exception ex)
         {
@@ -142,7 +174,7 @@ public partial class App : Application
         }
         Log.Information("종료");
         Log.CloseAndFlush();
-        _mutex?.ReleaseMutex();
+        try { _mutex?.ReleaseMutex(); } catch { }
         _mutex?.Dispose();
         base.OnExit(e);
     }
