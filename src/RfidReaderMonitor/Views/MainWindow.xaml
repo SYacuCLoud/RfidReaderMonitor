@@ -1,0 +1,754 @@
+<Window x:Class="RfidReaderMonitor.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:RfidReaderMonitor.ViewModels"
+        xmlns:readers="clr-namespace:RfidReaderMonitor.Readers"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+        xmlns:views="clr-namespace:RfidReaderMonitor.Views"
+        mc:Ignorable="d"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
+        Title="RFID Reader Monitor" Height="760" Width="1240" MinWidth="960" MinHeight="600"
+        FontFamily="Malgun Gothic" FontSize="12.5"
+        Background="#F4F5F7">
+
+    <Window.Resources>
+        <Style x:Key="Head" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#333"/>
+            <Setter Property="Margin" Value="0,10,0,4"/>
+        </Style>
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#666"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,2,8,2"/>
+        </Style>
+        <Style x:Key="Value" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,2,0,2"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style x:Key="Mono" TargetType="TextBlock" BasedOn="{StaticResource Value}">
+            <Setter Property="FontFamily" Value="Consolas"/>
+        </Style>
+        <!-- 선택·복사 가능한 읽기 전용 값 표시 -->
+        <Style x:Key="CopyBox" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,2,0,2"/>
+            <Setter Property="IsReadOnlyCaretVisible" Value="False"/>
+        </Style>
+        <Style x:Key="CopyButton" TargetType="Button">
+            <Setter Property="Padding" Value="6,1"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Content" Value="복사"/>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+            <Setter Property="MinWidth" Value="72"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Padding" Value="3,2"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Margin" Value="0,3,0,3"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style TargetType="GroupBox">
+            <Setter Property="Padding" Value="8,4,8,8"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="BorderBrush" Value="#D8DBE0"/>
+        </Style>
+        <Style TargetType="DataGrid">
+            <Setter Property="AutoGenerateColumns" Value="False"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="CanUserAddRows" Value="False"/>
+            <Setter Property="HeadersVisibility" Value="Column"/>
+            <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="#E6E8EC"/>
+            <Setter Property="RowHeight" Value="26"/>
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#D8DBE0"/>
+            <Setter Property="SelectionMode" Value="Single"/>
+            <Setter Property="SelectionUnit" Value="FullRow"/>
+        </Style>
+
+        <!-- 상태 색상 -->
+        <Style x:Key="StateBadge" TargetType="Border">
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Padding" Value="6,1"/>
+            <Setter Property="Background" Value="#9AA0A6"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static readers:PresenceState.Empty}">
+                    <Setter Property="Background" Value="#8A94A6"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static readers:PresenceState.Present}">
+                    <Setter Property="Background" Value="#2E9E5B"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static readers:PresenceState.InUse}">
+                    <Setter Property="Background" Value="#D98E04"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static readers:PresenceState.Mute}">
+                    <Setter Property="Background" Value="#D98E04"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static readers:PresenceState.Unavailable}">
+                    <Setter Property="Background" Value="#C43D3D"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static readers:PresenceState.Removed}">
+                    <Setter Property="Background" Value="#C43D3D"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="KindCell" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding KindText}" Value="등장">
+                    <Setter Property="Foreground" Value="#1E7E45"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding KindText}" Value="제거">
+                    <Setter Property="Foreground" Value="#B03A2E"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- 라이브 배너 애니메이션 -->
+        <Storyboard x:Key="BannerAppearAnim">
+            <ColorAnimation Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                            From="#2E9E5B" To="#E3F3E8" Duration="0:0:1.2">
+                <ColorAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></ColorAnimation.EasingFunction>
+            </ColorAnimation>
+            <ColorAnimation Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)"
+                            From="#2E9E5B" To="#2E9E5B" Duration="0:0:0.1"/>
+        </Storyboard>
+        <Storyboard x:Key="BannerRemoveAnim">
+            <ColorAnimation Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                            From="#C43D3D" To="#F0EEEE" Duration="0:0:1.2">
+                <ColorAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></ColorAnimation.EasingFunction>
+            </ColorAnimation>
+            <ColorAnimation Storyboard.TargetProperty="(Border.BorderBrush).(SolidColorBrush.Color)"
+                            From="#C43D3D" To="#C43D3D" Duration="0:0:0.1"/>
+        </Storyboard>
+        <Storyboard x:Key="BannerPulseAnim">
+            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                             From="1.25" To="1" Duration="0:0:0.45">
+                <DoubleAnimation.EasingFunction><BackEase EasingMode="EaseOut" Amplitude="0.6"/></DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                             From="1.25" To="1" Duration="0:0:0.45">
+                <DoubleAnimation.EasingFunction><BackEase EasingMode="EaseOut" Amplitude="0.6"/></DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+            <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.2" To="1" Duration="0:0:0.35"/>
+        </Storyboard>
+
+        <Style x:Key="BannerBorder" TargetType="Border">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding AppearFlash}" Value="True">
+                    <DataTrigger.EnterActions><BeginStoryboard Storyboard="{StaticResource BannerAppearAnim}"/></DataTrigger.EnterActions>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding AppearFlash}" Value="False">
+                    <DataTrigger.EnterActions><BeginStoryboard Storyboard="{StaticResource BannerAppearAnim}"/></DataTrigger.EnterActions>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RemoveFlash}" Value="True">
+                    <DataTrigger.EnterActions><BeginStoryboard Storyboard="{StaticResource BannerRemoveAnim}"/></DataTrigger.EnterActions>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RemoveFlash}" Value="False">
+                    <DataTrigger.EnterActions><BeginStoryboard Storyboard="{StaticResource BannerRemoveAnim}"/></DataTrigger.EnterActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="BannerPulse" TargetType="FrameworkElement">
+            <Setter Property="RenderTransformOrigin" Value="0,0.5"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding AppearFlash}" Value="True">
+                    <DataTrigger.EnterActions><BeginStoryboard Storyboard="{StaticResource BannerPulseAnim}"/></DataTrigger.EnterActions>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding AppearFlash}" Value="False">
+                    <DataTrigger.EnterActions><BeginStoryboard Storyboard="{StaticResource BannerPulseAnim}"/></DataTrigger.EnterActions>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RemoveFlash}" Value="True">
+                    <DataTrigger.EnterActions><BeginStoryboard Storyboard="{StaticResource BannerPulseAnim}"/></DataTrigger.EnterActions>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding RemoveFlash}" Value="False">
+                    <DataTrigger.EnterActions><BeginStoryboard Storyboard="{StaticResource BannerPulseAnim}"/></DataTrigger.EnterActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="BannerKindBadge" TargetType="Border">
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="12,4"/>
+            <Setter Property="Background" Value="#C43D3D"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding BannerIsAppear}" Value="True">
+                    <Setter Property="Background" Value="#2E9E5B"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- 상단 바 -->
+        <Border DockPanel.Dock="Top" Background="White" BorderBrush="#D8DBE0" BorderThickness="0,0,0,1" Padding="10,8">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <Button Content="새로고침" Command="{Binding RefreshCommand}"/>
+                    <Button Content="로그 폴더" Command="{Binding OpenLogFolderCommand}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Ellipse Width="10" Height="10" Margin="0,0,6,0" VerticalAlignment="Center">
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse">
+                                <Setter Property="Fill" Value="#C43D3D"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding ServiceHealthy}" Value="True">
+                                        <Setter Property="Fill" Value="#2E9E5B"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock Text="{Binding ServiceStatus}" VerticalAlignment="Center" Foreground="#444"/>
+                    <TextBlock Text="{Binding AppVersion, StringFormat=' v{0}'}" VerticalAlignment="Center" Foreground="#999" Margin="12,0,0,0"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- 상단 대시보드 -->
+        <Border DockPanel.Dock="Top" Background="#F4F5F7" Padding="10,8,10,2">
+            <Border.Resources>
+                <Style x:Key="Tile" TargetType="Border">
+                    <Setter Property="Background" Value="White"/>
+                    <Setter Property="BorderBrush" Value="#D8DBE0"/>
+                    <Setter Property="BorderThickness" Value="1"/>
+                    <Setter Property="CornerRadius" Value="6"/>
+                    <Setter Property="Padding" Value="12,8"/>
+                    <Setter Property="Margin" Value="0,0,8,6"/>
+                    <Setter Property="MinWidth" Value="130"/>
+                </Style>
+                <Style x:Key="TileCaption" TargetType="TextBlock">
+                    <Setter Property="FontSize" Value="11"/>
+                    <Setter Property="Foreground" Value="#777"/>
+                </Style>
+                <Style x:Key="TileValue" TargetType="TextBlock">
+                    <Setter Property="FontSize" Value="24"/>
+                    <Setter Property="FontWeight" Value="Bold"/>
+                    <Setter Property="Foreground" Value="#1B2A41"/>
+                    <Setter Property="Margin" Value="0,1,0,0"/>
+                </Style>
+                <Style x:Key="TileSub" TargetType="TextBlock">
+                    <Setter Property="FontSize" Value="11"/>
+                    <Setter Property="Foreground" Value="#999"/>
+                    <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                </Style>
+            </Border.Resources>
+            <WrapPanel>
+                <Border Style="{StaticResource Tile}">
+                    <StackPanel>
+                        <TextBlock Text="리더" Style="{StaticResource TileCaption}"/>
+                        <TextBlock Text="{Binding DashReaders}" Style="{StaticResource TileValue}"/>
+                        <TextBlock Text="{Binding DashReadersSub}" Style="{StaticResource TileSub}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Tile}">
+                    <StackPanel>
+                        <TextBlock Text="태그 감지 중" Style="{StaticResource TileCaption}"/>
+                        <TextBlock Text="{Binding DashPresent}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource TileValue}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding DashPresent}" Value="0">
+                                            <Setter Property="Foreground" Value="#9AA0A6"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="PRESENT 리더 수" Style="{StaticResource TileSub}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Tile}">
+                    <StackPanel>
+                        <TextBlock Text="오늘 등장" Style="{StaticResource TileCaption}"/>
+                        <TextBlock Text="{Binding DashAppearToday}" Style="{StaticResource TileValue}" Foreground="#1E7E45"/>
+                        <TextBlock Text="{Binding DashUnknownToday, StringFormat='UID 미확인 {0}'}" Style="{StaticResource TileSub}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Tile}">
+                    <StackPanel>
+                        <TextBlock Text="오늘 제거" Style="{StaticResource TileCaption}"/>
+                        <TextBlock Text="{Binding DashRemoveToday}" Style="{StaticResource TileValue}" Foreground="#B03A2E"/>
+                        <TextBlock Text="{Binding DashAvgDwell, StringFormat='평균 체류 {0}'}" Style="{StaticResource TileSub}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Tile}" MinWidth="260" MaxWidth="420">
+                    <StackPanel>
+                        <TextBlock Text="마지막 이벤트" Style="{StaticResource TileCaption}"/>
+                        <TextBlock Text="{Binding DashLastEvent}" Style="{StaticResource TileValue}" FontFamily="Consolas"/>
+                        <TextBlock Text="{Binding DashLastEventSub}" Style="{StaticResource TileSub}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Tile}" MinWidth="170" MaxWidth="320">
+                    <StackPanel>
+                        <TextBlock Text="이벤트 출력" Style="{StaticResource TileCaption}"/>
+                        <TextBlock Text="{Binding DashSinks}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource TileValue}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding DashSinksError}" Value="True">
+                                            <Setter Property="Foreground" Value="#B03A2E"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding DashSinksSub}" Style="{StaticResource TileSub}"/>
+                    </StackPanel>
+                </Border>
+            </WrapPanel>
+        </Border>
+
+        <!-- 하단 상태 -->
+        <Border DockPanel.Dock="Bottom" Background="#ECEEF1" BorderBrush="#D8DBE0" BorderThickness="0,1,0,0" Padding="10,4">
+            <TextBlock Text="{Binding StatusMessage}" Foreground="#333" TextTrimming="CharacterEllipsis"/>
+        </Border>
+
+        <!-- 라이브 배너: 가장 최근 태그 등장/제거 -->
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource BannerBorder}" BorderThickness="0,3,0,0" Padding="16,10"
+                Visibility="{Binding BannerVisible, Converter={StaticResource BoolToVis}}">
+            <Border.Background><SolidColorBrush Color="#F4F5F7"/></Border.Background>
+            <Border.BorderBrush><SolidColorBrush Color="#D8DBE0"/></Border.BorderBrush>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="2*"/>
+                    <ColumnDefinition Width="3*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Style="{StaticResource BannerKindBadge}" VerticalAlignment="Center" Margin="0,0,18,0">
+                    <TextBlock Text="{Binding BannerKind}" Foreground="White" FontSize="20" FontWeight="Bold"/>
+                </Border>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource BannerPulse}">
+                    <StackPanel.RenderTransform><ScaleTransform/></StackPanel.RenderTransform>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding BannerAlias}" FontSize="26" FontWeight="Bold" Foreground="#222" Margin="0,0,14,0" TextTrimming="CharacterEllipsis">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding BannerAlias}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding BannerSerial}" FontSize="26" FontWeight="Bold" FontFamily="Consolas" Foreground="#1B2A41" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding BannerReaderName}" FontSize="12" Foreground="#777" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="16,0,0,0" Style="{StaticResource BannerPulse}">
+                    <StackPanel.RenderTransform><ScaleTransform/></StackPanel.RenderTransform>
+                    <TextBlock Text="{Binding BannerUid}" FontSize="34" FontFamily="Consolas" FontWeight="Bold" Foreground="#1B2A41" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding BannerTech}" FontSize="13" Foreground="#555"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="16,0,0,0">
+                    <TextBlock Text="{Binding BannerTime, StringFormat=HH:mm:ss.fff}" FontSize="16" FontFamily="Consolas" Foreground="#444" HorizontalAlignment="Right"/>
+                    <TextBlock Text="{Binding BannerDetail}" FontSize="14" Foreground="#666" HorizontalAlignment="Right" Margin="0,2,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Margin="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*" MinWidth="380"/>
+                <ColumnDefinition Width="6"/>
+                <ColumnDefinition Width="3*" MinWidth="460"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 왼쪽: 리더 목록 -->
+            <DockPanel Grid.Column="0">
+                <TextBlock DockPanel.Dock="Top" Text="리더" Style="{StaticResource Head}" Margin="0,0,0,4"/>
+                <DataGrid ItemsSource="{Binding Readers}" SelectedItem="{Binding SelectedReader}" ClipboardCopyMode="ExcludeHeader">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="UID 복사" Command="{Binding CopyTextCommand}" CommandParameter="{Binding SelectedReader.Uid}"/>
+                            <MenuItem Header="S/N 복사" Command="{Binding CopyTextCommand}" CommandParameter="{Binding SelectedReader.Serial}"/>
+                            <MenuItem Header="PC/SC 이름 복사" Command="{Binding CopyTextCommand}" CommandParameter="{Binding SelectedReader.Name}"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="상태" Width="118">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource StateBadge}" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding StateText}" Foreground="White" FontSize="11"/>
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="별명" Binding="{Binding Alias}" Width="90"/>
+                        <DataGridTextColumn Header="S/N" Binding="{Binding Serial}" Width="110" FontFamily="Consolas"/>
+                        <DataGridTextColumn Header="UID" Binding="{Binding Uid}" Width="*" FontFamily="Consolas"/>
+                        <DataGridTextColumn Header="PC/SC 이름" Binding="{Binding Name}" Width="220"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </DockPanel>
+
+            <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="Transparent"/>
+
+            <!-- 오른쪽: 탭 -->
+            <TabControl Grid.Column="2" Background="White" BorderBrush="#D8DBE0">
+
+                <!-- ============ 리더 상세 ============ -->
+                <TabItem Header="리더 상세">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="10" DataContext="{Binding SelectedReader}">
+                            <TextBlock Text="리더를 선택하세요." Foreground="#999" Margin="0,10">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <StackPanel>
+                                <StackPanel.Style>
+                                    <Style TargetType="StackPanel">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </StackPanel.Style>
+
+                                <GroupBox Header="식별">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Grid.Row="0" Text="PC/SC 이름" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Name}" Style="{StaticResource Value}"/>
+                                        <TextBlock Grid.Row="1" Text="제조사 / 모델" Style="{StaticResource Label}"/>
+                                        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Vendor}" Style="{StaticResource Value}"/>
+                                            <TextBlock Text=" / " Style="{StaticResource Value}"/>
+                                            <TextBlock Text="{Binding IfdType}" Style="{StaticResource Value}"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="2" Text="H/W S/N" Style="{StaticResource Label}"/>
+                                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                            <TextBox Text="{Binding Serial, Mode=OneWay}" Style="{StaticResource CopyBox}" FontWeight="SemiBold"/>
+                                            <Button Style="{StaticResource CopyButton}"
+                                                    Command="{Binding DataContext.CopyTextCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding Serial}"/>
+                                            <TextBlock Text="{Binding SerialSource, StringFormat='  ({0})'}" Style="{StaticResource Value}" Foreground="#888"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="3" Text="드라이버 버전" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding IfdVersion}" Style="{StaticResource Value}"/>
+                                        <TextBlock Grid.Row="4" Text="펌웨어" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Firmware}" Style="{StaticResource Value}"/>
+                                        <TextBlock Grid.Row="5" Text="USB 인스턴스" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding DeviceInstanceId}" Style="{StaticResource Mono}" FontSize="11"/>
+                                        <TextBlock Grid.Row="6" Text="드라이버 / 포트" Style="{StaticResource Label}"/>
+                                        <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal">
+                                            <TextBlock Text="{Binding DriverService}" Style="{StaticResource Value}"/>
+                                            <TextBlock Text="{Binding PortPath, StringFormat='   포트 {0}'}" Style="{StaticResource Value}" Foreground="#888"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="7" Text="설정 키" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding Key}" Style="{StaticResource Mono}" Foreground="#888"/>
+                                    </Grid>
+                                </GroupBox>
+
+                                <GroupBox Header="별명">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                                        <TextBlock Text="별명" Style="{StaticResource Label}"/>
+                                        <TextBox Grid.Column="1" Text="{Binding Alias, UpdateSourceTrigger=PropertyChanged}" Margin="0,2"/>
+                                        <TextBlock Grid.Row="1" Text="메모" Style="{StaticResource Label}"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Note, UpdateSourceTrigger=PropertyChanged}" Margin="0,2"/>
+                                        <Button Grid.Column="2" Grid.RowSpan="2" Content="저장" VerticalAlignment="Center" Margin="8,0,0,0"
+                                                Command="{Binding DataContext.SaveAliasCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                    </Grid>
+                                </GroupBox>
+
+                                <GroupBox Header="현재 태그">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="상태" Style="{StaticResource Label}"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                            <Border Style="{StaticResource StateBadge}" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding StateText}" Foreground="White" FontSize="11"/>
+                                            </Border>
+                                            <TextBlock Text="{Binding LastChange, StringFormat='  {0:HH:mm:ss.fff}'}" Style="{StaticResource Value}" Foreground="#888"/>
+                                            <TextBlock Text="{Binding AppearCount, StringFormat='   등장 {0}회'}" Style="{StaticResource Value}" Foreground="#888"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="1" Text="UID" Style="{StaticResource Label}"/>
+                                        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
+                                            <TextBox Text="{Binding Uid, Mode=OneWay}" Style="{StaticResource CopyBox}" FontSize="15" FontWeight="SemiBold"/>
+                                            <Button Style="{StaticResource CopyButton}"
+                                                    Command="{Binding DataContext.CopyTextCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding Uid}"/>
+                                            <TextBlock Text="{Binding UidLength, StringFormat='  {0}'}" Style="{StaticResource Value}" Foreground="#888"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="2" Text="카드 규격" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Tech}" Style="{StaticResource Value}"/>
+                                        <TextBlock Grid.Row="3" Text="ATR" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Atr}" Style="{StaticResource Mono}" FontSize="11"/>
+                                        <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Margin="0,6,0,0">
+                                            <Button Content="UID 지금 읽기" Command="{Binding DataContext.ReadUidNowCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                            <Button Content="리더 정보 갱신" Command="{Binding DataContext.ReIdentifyCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding LastError}" Foreground="#B03A2E" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                    </Grid>
+                                </GroupBox>
+
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- ============ 이벤트 ============ -->
+                <TabItem Header="이벤트">
+                    <Grid Margin="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="3*"/>
+                            <RowDefinition Height="6"/>
+                            <RowDefinition Height="2*"/>
+                        </Grid.RowDefinitions>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <TextBlock Text="확정 이벤트 (디바운스 적용)" Style="{StaticResource Head}" Margin="0,0,16,0"/>
+                            <Button Content="CSV 내보내기" Command="{Binding ExportEventsCommand}"/>
+                            <Button Content="지우기" Command="{Binding ClearEventsCommand}"/>
+                        </StackPanel>
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding Events}" SelectedItem="{Binding SelectedEvent}" ClipboardCopyMode="ExcludeHeader">
+                            <DataGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="UID 복사" Command="{Binding CopyTextCommand}" CommandParameter="{Binding SelectedEvent.Uid}"/>
+                                    <MenuItem Header="S/N 복사" Command="{Binding CopyTextCommand}" CommandParameter="{Binding SelectedEvent.Serial}"/>
+                                    <MenuItem Header="행 복사 (CSV)" Command="{Binding CopyTextCommand}" CommandParameter="{Binding SelectedEvent.CsvLine}"/>
+                                </ContextMenu>
+                            </DataGrid.ContextMenu>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="시각" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="100"/>
+                                <DataGridTemplateColumn Header="종류" Width="56">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding KindText}" Style="{StaticResource KindCell}" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="리더" Binding="{Binding DisplayName}" Width="120"/>
+                                <DataGridTextColumn Header="UID" Binding="{Binding Uid}" Width="190" FontFamily="Consolas"/>
+                                <DataGridTextColumn Header="규격" Binding="{Binding Tech}" Width="*"/>
+                                <DataGridTextColumn Header="체류(ms)" Binding="{Binding DwellMs}" Width="80">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Right"/></Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <GridSplitter Grid.Row="2" HorizontalAlignment="Stretch" Background="Transparent"/>
+                        <DockPanel Grid.Row="3">
+                            <TextBlock DockPanel.Dock="Top" Text="원신호 (리더가 보고한 그대로)" Style="{StaticResource Head}" Margin="0,4,0,4"/>
+                            <DataGrid ItemsSource="{Binding RawSignals}" RowHeight="22" FontSize="11.5">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="시각" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="100"/>
+                                    <DataGridTextColumn Header="리더" Binding="{Binding ReaderName}" Width="200"/>
+                                    <DataGridTextColumn Header="상태" Binding="{Binding State}" Width="120"/>
+                                    <DataGridTextColumn Header="비고" Binding="{Binding Note}" Width="*"/>
+                                    <DataGridTextColumn Header="ATR" Binding="{Binding Atr}" Width="240" FontFamily="Consolas"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </Grid>
+                </TabItem>
+
+                <!-- ============ 인식률 시험 ============ -->
+                <TabItem Header="인식률 시험">
+                    <StackPanel Margin="12">
+                        <TextBlock TextWrapping="Wrap" Foreground="#555" Margin="0,0,0,10"
+                                   Text="태그를 정위치에 두고 시작을 누르십시오. 지정 시간 동안 반복해서 UID를 읽어 성공률과 최대 끊김 시간을 측정합니다. 읽기 거리·상판 두께·태그 위치를 바꿔 가며 비교하는 용도입니다."/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="대상 리더" Style="{StaticResource Label}"/>
+                            <TextBlock Text="{Binding SelectedReader.DisplayName}" Style="{StaticResource Value}" FontWeight="SemiBold" Margin="0,0,20,0"/>
+                            <TextBlock Text="시간(초)" Style="{StaticResource Label}"/>
+                            <TextBox Text="{Binding TestDurationSec}" Width="60" Margin="0,0,16,0"/>
+                            <TextBlock Text="간격(ms)" Style="{StaticResource Label}"/>
+                            <TextBox Text="{Binding TestIntervalMs}" Width="60" Margin="0,0,16,0"/>
+                            <Button Content="시작" Command="{Binding StartTestCommand}"/>
+                            <Button Content="중지" Command="{Binding StopTestCommand}" IsEnabled="{Binding TestRunning}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding TestProgressText}" Style="{StaticResource Mono}" Margin="0,12,0,4"/>
+                        <Border Background="#F4F5F7" Padding="10" CornerRadius="4" Margin="0,4,0,10">
+                            <TextBlock Text="{Binding TestResultText}" TextWrapping="Wrap" FontWeight="SemiBold"/>
+                        </Border>
+                        <TextBlock Text="이력" Style="{StaticResource Head}"/>
+                        <ListBox ItemsSource="{Binding TestHistory}" Height="260" FontFamily="Consolas" FontSize="11.5"/>
+                    </StackPanel>
+                </TabItem>
+
+                <!-- ============ 제조사 도구 (선택 리더의 제조사에 따라 내용이 바뀜) ============ -->
+                <TabItem>
+                    <TabItem.Header>
+                        <TextBlock Text="{Binding VendorToolsHeader}"/>
+                    </TabItem.Header>
+                    <Grid>
+                        <TextBlock Text="{Binding VendorToolsMessage}" Margin="16" Foreground="#666" TextWrapping="Wrap" VerticalAlignment="Top">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding VendorToolsMessage}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <ContentControl Content="{Binding VendorTools}">
+                            <ContentControl.Resources>
+                                <DataTemplate DataType="{x:Type vm:AcsToolsViewModel}">
+                                    <views:AcsToolsView/>
+                                </DataTemplate>
+                            </ContentControl.Resources>
+                        </ContentControl>
+                    </Grid>
+                </TabItem>
+
+                <!-- ============ 설정 ============ -->
+                <TabItem Header="설정">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="12">
+                            <GroupBox Header="판정">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="제거 확정 대기 T_off (ms)" Style="{StaticResource Label}" Width="200"/>
+                                        <TextBox Text="{Binding RemovalDebounceMs}" Width="80"/>
+                                        <TextBlock Text="  EMPTY가 이 시간 이상 유지되면 제거로 확정. 즉시 저장됨." Style="{StaticResource Label}"/>
+                                    </StackPanel>
+                                    <CheckBox Content="ISO 15693 UID 역순 표시 (리더가 LSB 우선으로 줄 때)" IsChecked="{Binding ReverseIso15693}"/>
+                                    <CheckBox Content="등장 시 리더 부저 (ACS, EscapeCommandEnable 필요)" IsChecked="{Binding BeepOnAppear}"/>
+                                    <CheckBox Content="원신호를 raw-*.csv 로 남김" IsChecked="{Binding LogRawEvents}"/>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <GroupBox Header="이벤트 출력">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="200"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="로그 폴더" Style="{StaticResource Label}"/>
+                                        <TextBox Grid.Column="1" Text="{Binding LogFolder}" Margin="0,2"/>
+
+                                        <CheckBox Grid.Row="1" Content="CSV 파일 (events-날짜.csv)" IsChecked="{Binding CsvEnabled}"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding CsvFolder}" Margin="0,2"/>
+
+                                        <CheckBox Grid.Row="2" Content="TCP 서버 (JSON 줄 단위 방송)" IsChecked="{Binding TcpEnabled}"/>
+                                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                            <TextBlock Text="포트" Style="{StaticResource Label}"/>
+                                            <TextBox Text="{Binding TcpPort}" Width="70"/>
+                                        </StackPanel>
+
+                                        <CheckBox Grid.Row="3" Content="명명된 파이프" IsChecked="{Binding PipeEnabled}"/>
+                                        <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
+                                            <TextBlock Text="\\.\pipe\" Style="{StaticResource Label}" FontFamily="Consolas"/>
+                                            <TextBox Text="{Binding PipeName}" Width="200"/>
+                                        </StackPanel>
+
+                                        <CheckBox Grid.Row="4" Content="SQL Server" IsChecked="{Binding SqlEnabled}"/>
+                                        <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding SqlConnectionString}" Margin="0,2" FontFamily="Consolas" FontSize="11"/>
+                                        <TextBlock Grid.Row="5" Text="   테이블" Style="{StaticResource Label}"/>
+                                        <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal">
+                                            <TextBox Text="{Binding SqlTable}" Width="200" Margin="0,2,12,2"/>
+                                            <CheckBox Content="없으면 자동 생성" IsChecked="{Binding SqlAutoCreate}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock Text="출력 상태" Style="{StaticResource Head}"/>
+                                    <ItemsControl ItemsSource="{Binding SinkStatuses}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                    <TextBlock Text="{Binding Name}" Width="110" FontWeight="SemiBold"/>
+                                                    <TextBlock Text="{Binding Status}" Margin="0,0,12,0"/>
+                                                    <TextBlock Text="{Binding LastError}" Foreground="#B03A2E"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <GroupBox Header="실행">
+                                <StackPanel>
+                                    <CheckBox Content="창 닫기 시 트레이로 최소화" IsChecked="{Binding MinimizeToTray}"/>
+                                    <CheckBox Content="시작 시 트레이로 (최소화 상태로 시작)" IsChecked="{Binding StartMinimized}"/>
+                                    <CheckBox Content="로그인 시 자동 시작 (현재 사용자)" IsChecked="{Binding AutostartEnabled}"/>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <GroupBox Header="Windows 점검">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding ScPnpText}" Style="{StaticResource Value}"/>
+                                        <Button Content="정책 적용 (관리자)" Margin="12,0,0,0" Command="{Binding ApplyScPnpCommand}"
+                                                Visibility="{Binding ScPnpNeedsAction, Converter={StaticResource BoolToVis}}"/>
+                                        <Button Content="원복 (관리자)" Margin="12,0,0,0" Command="{Binding RestoreScPnpCommand}"
+                                                ToolTip="정책 값을 지워 Windows 기본(켜짐)으로 되돌립니다."
+                                                Visibility="{Binding ScPnpIsDisabled, Converter={StaticResource BoolToVis}}"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding ScardServiceText}" Style="{StaticResource Value}"/>
+                                    <TextBlock Text="{Binding SettingsPath, StringFormat='설정 파일: {0}'}" Style="{StaticResource Value}" Foreground="#888"/>
+                                    <Button Content="다시 점검" HorizontalAlignment="Left" Margin="0,6,0,0" Command="{Binding CheckSystemCommand}"/>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <Button Content="설정 저장 및 출력 재구성" HorizontalAlignment="Left" Padding="14,6" Command="{Binding SaveSettingsCommand}"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
+        </Grid>
+    </DockPanel>
+</Window>

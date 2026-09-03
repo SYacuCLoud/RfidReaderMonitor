@@ -1,0 +1,59 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          $ref = "${{ github.ref }}"
+          if ($ref -like "refs/tags/v*") {
+            $v = $ref.Substring("refs/tags/v".Length)
+          } else {
+            $v = "0.0.0-ci.${{ github.run_number }}"
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          Write-Host "Version: $v"
+
+      - name: Restore
+        run: dotnet restore src/RfidReaderMonitor/RfidReaderMonitor.csproj
+
+      - name: Build
+        run: dotnet build src/RfidReaderMonitor/RfidReaderMonitor.csproj -c Release --no-restore -p:Version=${{ steps.ver.outputs.version }}
+
+      - name: Publish single-file exe
+        run: >
+          dotnet publish src/RfidReaderMonitor/RfidReaderMonitor.csproj -c Release -r win-x64 --self-contained
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true
+          -p:Version=${{ steps.ver.outputs.version }} -o publish
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RfidReaderMonitor-${{ steps.ver.outputs.version }}
+          path: publish/RfidReaderMonitor.exe
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: publish/RfidReaderMonitor.exe
+          generate_release_notes: true
