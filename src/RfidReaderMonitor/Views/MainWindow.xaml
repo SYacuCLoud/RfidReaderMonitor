@@ -564,7 +564,7 @@
                                 <StackPanel>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="200"/>
+                                            <ColumnDefinition Width="240"/>
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions>
@@ -573,13 +573,13 @@
                                         <TextBlock Text="로그 폴더" Style="{StaticResource Label}"/>
                                         <TextBox Grid.Column="1" Text="{Binding LogFolder}" Margin="0,2"/>
 
-                                        <CheckBox Grid.Row="6" Content="TCP 클라이언트 (수집 서버로 전송)" IsChecked="{Binding TcpClientEnabled}"/>
+                                        <CheckBox Grid.Row="6" Content="TCP 클라이언트" IsChecked="{Binding TcpClientEnabled}"/>
                                         <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal">
                                             <TextBlock Text="수집 PC 주소" Style="{StaticResource Label}"/>
                                             <TextBox Text="{Binding TcpClientHost}" Width="200" Margin="0,2,12,2"/>
                                             <TextBlock Text="포트" Style="{StaticResource Label}"/>
                                             <TextBox Text="{Binding TcpClientPort}" Width="70"/>
-                                            <TextBlock Text="  끊기면 로컬 큐에 쌓아 두고 복구 후 재전송" Style="{StaticResource Label}"/>
+                                            <TextBlock Text="  수집 모드로 띄운 PC에 전송. 끊기면 로컬 큐에 보관 후 재전송" Style="{StaticResource Label}"/>
                                         </StackPanel>
 
                                         <TextBlock Grid.Row="7" Text="상태 메시지(하트비트) 주기(초)" Style="{StaticResource Label}"/>
