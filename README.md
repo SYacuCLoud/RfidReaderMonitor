@@ -117,7 +117,7 @@ time,kind,alias,readerName,serial,uid,tech,atr,dwellMs,host
    RfidReaderMonitor.exe --collector 9760
    ```
 
-2. 각 감시 PC의 **설정 → 이벤트 출력 → TCP 클라이언트** 를 켜고 수집 PC 주소와 포트를 넣은 뒤 **설정 저장 및 출력 재구성** 을 누릅니다.
+2. 각 감시 PC의 **설정 → 이벤트 출력 → 수집 PC 로 전송** 에 수집 PC 주소와 포트를 넣고 **전송 시작** 을 누릅니다. 바로 저장·적용되며 버튼 옆에 연결 상태(연결됨 / 재시도 중 / 꺼짐)와 대기 건수가 표시됩니다.
 3. 수집 화면에 PC별 타일(연결 상태, 리더별 상태·UID, 오늘 건수, 마지막 이벤트)과 통합 이벤트 목록이 나타납니다. 하트비트가 3분 이상 끊기면 타일이 주황색(응답 지연), 연결이 끊기면 붉은색이 됩니다.
 4. 통합 이벤트는 `%LOCALAPPDATA%\RfidReaderMonitor\logs\collector\events-YYYYMMDD.csv` 에도 기록됩니다.
 

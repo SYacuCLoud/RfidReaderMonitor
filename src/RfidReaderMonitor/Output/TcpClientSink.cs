@@ -20,6 +20,9 @@ public sealed class TcpClientSink : SinkBase
 
     public override string Name => "TCP 클라이언트";
 
+    /// <summary>지금 수집 서버와 소켓이 붙어 있는지. 끊겨 있어도 큐에 쌓아 두고 재접속을 계속 시도한다.</summary>
+    public bool IsConnected => _connected;
+
     public TcpClientSink(string host, int port, string queueFolder)
     {
         _host = host;

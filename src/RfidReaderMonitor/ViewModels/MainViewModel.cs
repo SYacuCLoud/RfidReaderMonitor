@@ -198,6 +198,11 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _tcpClientEnabled;
     [ObservableProperty] private string _tcpClientHost = "";
     [ObservableProperty] private int _tcpClientPort;
+    // 수집 PC 전송은 체크박스 대신 버튼 + 옆 상태 표시로 다룬다 (체크만 하고 저장을 안 눌러 "켰는데 왜 안 붙지"가 되는 것을 막음)
+    [ObservableProperty] private string _tcpClientButtonText = "전송 시작";
+    [ObservableProperty] private string _tcpClientStatusText = "꺼짐";
+    [ObservableProperty] private string _tcpClientStatusColor = "#888888";
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(ToggleTcpClientCommand))] private bool _tcpClientCanToggle;
     [ObservableProperty] private int _heartbeatSec;
     [ObservableProperty] private bool _autostartEnabled;
 
@@ -365,6 +370,9 @@ public sealed partial class MainViewModel : ObservableObject
     partial void OnRemovalDebounceMsChanged(int value) => _tracker.RemovalDebounceMs = Math.Max(0, value);
     partial void OnReverseIso15693Changed(bool value) => _tracker.ReverseIso15693 = value;
     partial void OnLogRawEventsChanged(bool value) => _rawLogger.Enabled = value;
+    partial void OnTcpClientHostChanged(string value) => UpdateTcpClientUi();
+    partial void OnTcpClientPortChanged(int value) => UpdateTcpClientUi();
+    partial void OnTcpClientEnabledChanged(bool value) => UpdateTcpClientUi();
 
     partial void OnAutostartEnabledChanged(bool value)
     {
@@ -710,6 +718,57 @@ public sealed partial class MainViewModel : ObservableObject
         StatusMessage = "설정 저장 및 출력 재구성 완료";
     }
 
+    /// <summary>
+    /// 수집 PC 전송 버튼. 꺼져 있으면 켜고, 켜져 있으면 끄고, 켜진 채 주소·포트를 바꿨으면 새 값으로 다시 시작한다.
+    /// 누르는 즉시 설정을 저장하고 출력을 재구성하므로 "설정 저장" 버튼을 따로 누를 필요가 없다.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(TcpClientCanToggle))]
+    private async Task ToggleTcpClient()
+    {
+        var saved = _settings.TcpClient;
+        var changed = TcpClientHost.Trim() != saved.Host || TcpClientPort != saved.Port;
+        if (!saved.Enabled || changed)
+        {
+            if (string.IsNullOrWhiteSpace(TcpClientHost)) { StatusMessage = "수집 PC 주소를 입력하세요."; return; }
+            TcpClientEnabled = true;
+        }
+        else
+        {
+            TcpClientEnabled = false;
+        }
+        await SaveSettings();
+        StatusMessage = TcpClientEnabled
+            ? $"수집 PC 전송 시작: {_settings.TcpClient.Host}:{_settings.TcpClient.Port}"
+            : "수집 PC 전송 중지";
+        UpdateTcpClientUi();
+    }
+
+    /// <summary>버튼 글자·활성 여부와 옆 상태 글자를 저장된 설정과 실제 싱크 상태에서 다시 계산한다.</summary>
+    private void UpdateTcpClientUi()
+    {
+        var saved = _settings.TcpClient;
+        var changed = TcpClientHost.Trim() != saved.Host || TcpClientPort != saved.Port;
+        TcpClientCanToggle = saved.Enabled || !string.IsNullOrWhiteSpace(TcpClientHost);
+        TcpClientButtonText = !saved.Enabled ? "전송 시작" : changed ? "바꾼 주소로 다시 시작" : "전송 중지";
+
+        var sink = _dispatcher.Sinks.OfType<TcpClientSink>().FirstOrDefault();
+        if (sink is null)
+        {
+            TcpClientStatusText = saved.Enabled ? "시작 안 됨" : "꺼짐";
+            TcpClientStatusColor = "#888888";
+        }
+        else if (sink.IsConnected)
+        {
+            TcpClientStatusText = "● " + sink.Status;
+            TcpClientStatusColor = "#2E7D32";
+        }
+        else
+        {
+            TcpClientStatusText = "○ " + sink.Status;
+            TcpClientStatusColor = "#C77700";
+        }
+    }
+
     private async Task ApplySinksAsync()
     {
         var sinks = new List<IEventSink>();
@@ -729,7 +788,11 @@ public sealed partial class MainViewModel : ObservableObject
         {
             var row = new SinkStatusRow(s.Name) { Status = "시작 중" };
             SinkStatuses.Add(row);
-            s.StatusChanged += sink => _ui.BeginInvoke(() => row.Status = sink.Status);
+            s.StatusChanged += sink => _ui.BeginInvoke(() =>
+            {
+                row.Status = sink.Status;
+                if (sink is TcpClientSink) UpdateTcpClientUi();
+            });
         }
         await _dispatcher.ReconfigureAsync(sinks);
         RefreshSinkStatuses();
@@ -743,6 +806,7 @@ public sealed partial class MainViewModel : ObservableObject
             row.Status = s?.Status ?? "시작 실패";
         }
         RefreshDashboardSinks();
+        UpdateTcpClientUi();
     }
 
     // ------------------------------------------------------------ 명령: 인식률 시험

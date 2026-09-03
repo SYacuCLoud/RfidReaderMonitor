@@ -573,13 +573,16 @@
                                         <TextBlock Text="로그 폴더" Style="{StaticResource Label}"/>
                                         <TextBox Grid.Column="1" Text="{Binding LogFolder}" Margin="0,2"/>
 
-                                        <CheckBox Grid.Row="6" Content="TCP 클라이언트" IsChecked="{Binding TcpClientEnabled}"/>
+                                        <TextBlock Grid.Row="6" Text="수집 PC 로 전송" Style="{StaticResource Label}"
+                                                   ToolTip="수집 모드(--collector)로 띄운 PC에 이벤트와 상태를 보냅니다. 끊기면 로컬 큐에 보관했다가 다시 붙으면 순서대로 재전송합니다."/>
                                         <StackPanel Grid.Row="6" Grid.Column="1" Orientation="Horizontal">
-                                            <TextBlock Text="수집 PC 주소" Style="{StaticResource Label}"/>
+                                            <TextBlock Text="주소" Style="{StaticResource Label}"/>
                                             <TextBox Text="{Binding TcpClientHost}" Width="200" Margin="0,2,12,2"/>
                                             <TextBlock Text="포트" Style="{StaticResource Label}"/>
-                                            <TextBox Text="{Binding TcpClientPort}" Width="70"/>
-                                            <TextBlock Text="  수집 모드로 띄운 PC에 전송. 끊기면 로컬 큐에 보관 후 재전송" Style="{StaticResource Label}"/>
+                                            <TextBox Text="{Binding TcpClientPort}" Width="70" Margin="0,2,12,2"/>
+                                            <Button Content="{Binding TcpClientButtonText}" Command="{Binding ToggleTcpClientCommand}" MinWidth="90" Margin="0,2,12,2"
+                                                    ToolTip="누르면 바로 저장되고 적용됩니다. 켜진 뒤에는 끊겨도 자동으로 재접속합니다."/>
+                                            <TextBlock Text="{Binding TcpClientStatusText}" Foreground="{Binding TcpClientStatusColor}" Style="{StaticResource Label}" VerticalAlignment="Center"/>
                                         </StackPanel>
 
                                         <TextBlock Grid.Row="7" Text="상태 메시지(하트비트) 주기(초)" Style="{StaticResource Label}"/>
