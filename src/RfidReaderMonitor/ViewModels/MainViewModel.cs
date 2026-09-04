@@ -38,6 +38,8 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly RawSignalLogger _rawLogger;
     private readonly Dispatcher _ui;
     private IReadOnlyList<UsbReaderDevice> _devices = Array.Empty<UsbReaderDevice>();
+    /// <summary>리더 이름 → 별명. 원신호 로그/표에 별명을 붙일 때 추적기 스레드에서 읽는다.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _aliasByReader = new();
     private CancellationTokenSource? _testCts;
 
     public ObservableCollection<ReaderItemViewModel> Readers { get; } = new();
@@ -273,8 +275,10 @@ public sealed partial class MainViewModel : ObservableObject
         });
 
         _tracker.Confirmed += OnConfirmed;
-        _tracker.Raw += s =>
+        _tracker.Raw += raw =>
         {
+            // 추적기 스레드에서 오므로 UI 컬렉션 대신 별명 사전을 본다.
+            var s = _aliasByReader.TryGetValue(raw.ReaderName, out var alias) ? raw with { Alias = alias } : raw;
             _rawLogger.Write(s);
             _ui.BeginInvoke(() =>
             {
@@ -494,6 +498,7 @@ public sealed partial class MainViewModel : ObservableObject
                 r.LastChange = DateTimeOffset.Now;
                 _tracker.ResetReader(r.Name, "리더 제거");
                 Readers.Remove(r);
+                _aliasByReader.TryRemove(r.Name, out _);
                 StatusMessage = $"리더 제거: {r.DisplayName}";
             }
         }
@@ -509,9 +514,12 @@ public sealed partial class MainViewModel : ObservableObject
                 if (kind == ReaderKind.Modbus) FillModbusInfo(vm);
                 vm.PropertyChanged += (s, e) =>
                 {
+                    var item = (ReaderItemViewModel)s!;
+                    if (e.PropertyName == nameof(ReaderItemViewModel.Alias))
+                        _aliasByReader[item.Name] = item.Alias?.Trim() ?? "";
                     // 별명/메모는 입력하면 자동 저장 (저장 버튼은 즉시 저장용으로 유지)
                     if (e.PropertyName is nameof(ReaderItemViewModel.Alias) or nameof(ReaderItemViewModel.Note))
-                        ScheduleProfileSave((ReaderItemViewModel)s!);
+                        ScheduleProfileSave(item);
                 };
                 Readers.Add(vm);
                 StatusMessage = $"리더 연결: {n}";

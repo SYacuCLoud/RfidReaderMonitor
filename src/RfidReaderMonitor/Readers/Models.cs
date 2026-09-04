@@ -40,7 +40,9 @@ public enum ReaderKind
     /// <summary>Windows PC/SC(WinSCard) 리더. 대개 USB CCID.</summary>
     PcSc,
     /// <summary>Modbus TCP 로 폴링하는 산업용 리더/IO-Link 마스터.</summary>
-    Modbus
+    Modbus,
+    /// <summary>MQTT 브로커의 토픽을 구독해 받는 리더 (장치 내장 MQTT 또는 게이트웨이 경유).</summary>
+    Mqtt
 }
 
 public static class ReaderKindText
@@ -49,6 +51,7 @@ public static class ReaderKindText
     {
         ReaderKind.PcSc => "USB PC/SC",
         ReaderKind.Modbus => "Modbus TCP",
+        ReaderKind.Mqtt => "MQTT",
         _ => "?"
     };
 }

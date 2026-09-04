@@ -210,7 +210,8 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="리더" Binding="{Binding DisplayName}" Width="140"/>
+                        <DataGridTextColumn Header="별명" Binding="{Binding Alias}" Width="90"/>
+                        <DataGridTextColumn Header="리더" Binding="{Binding ReaderName}" Width="150"/>
                         <DataGridTextColumn Header="S/N" Binding="{Binding Serial}" Width="120" FontFamily="Consolas"/>
                         <DataGridTextColumn Header="UID" Binding="{Binding Uid}" Width="190" FontFamily="Consolas"/>
                         <DataGridTextColumn Header="규격" Binding="{Binding Tech}" Width="*"/>

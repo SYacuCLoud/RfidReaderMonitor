@@ -109,6 +109,95 @@ public sealed class ModbusSettings
     public List<ModbusReaderSettings> Readers { get; set; } = new();
 }
 
+/// <summary>MQTT 페이로드 형식.</summary>
+public enum MqttPayloadFormat
+{
+    /// <summary>JSON. Present 와 UID 를 경로로 찍는다.</summary>
+    Json,
+    /// <summary>페이로드 자체가 UID. 비어 있으면 태그 없음.</summary>
+    Text
+}
+
+/// <summary>태그 있음을 어떻게 판단하는가.</summary>
+public enum MqttPresentMode
+{
+    /// <summary>JSON 의 Present 필드(불리언·0/1·문자열)로 판단.</summary>
+    Field,
+    /// <summary>UID 가 비어 있지 않으면 있음. Present 필드가 없는 장치용.</summary>
+    UidNonEmpty
+}
+
+/// <summary>UID 값의 인코딩.</summary>
+public enum MqttUidEncoding
+{
+    /// <summary>"E0 04 01 …" 또는 "e0040100…" 같은 16진 문자열.</summary>
+    Hex,
+    Base64,
+    /// <summary>10진 정수(문자열 또는 숫자). 8바이트 빅엔디언으로 푼다.</summary>
+    Decimal,
+    /// <summary>JSON 숫자 배열 [224, 4, …].</summary>
+    ByteArray,
+    /// <summary>문자열 그대로(UTF-8 바이트). 사람이 붙인 ID 문자열일 때.</summary>
+    Utf8
+}
+
+/// <summary>MQTT 토픽 하나를 리더 한 대로 보는 설정.</summary>
+public sealed class MqttReaderSettings
+{
+    public bool Enabled { get; set; } = true;
+    public string Name { get; set; } = "";
+    public string Host { get; set; } = "";
+    public int Port { get; set; } = 1883;
+    public bool UseTls { get; set; }
+    /// <summary>자체 서명 인증서 브로커용. 서버 인증서 검증을 건너뛴다.</summary>
+    public bool IgnoreCertErrors { get; set; }
+    public string Username { get; set; } = "";
+    /// <summary>DPAPI(현재 사용자)로 보호된 비밀번호. 평문은 Password 로 다룬다.</summary>
+    public string PasswordProtected { get; set; } = "";
+    /// <summary>비우면 앱이 만든다.</summary>
+    public string ClientId { get; set; } = "";
+
+    /// <summary>구독 토픽(필터). + 와 # 와일드카드 가능.</summary>
+    public string Topic { get; set; } = "";
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public MqttPayloadFormat PayloadFormat { get; set; } = MqttPayloadFormat.Json;
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public MqttPresentMode PresentMode { get; set; } = MqttPresentMode.Field;
+    /// <summary>JSON 경로. 예: present, data.tagPresent, tags[0].present</summary>
+    public string PresentPath { get; set; } = "present";
+    public string UidPath { get; set; } = "uid";
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public MqttUidEncoding UidEncoding { get; set; } = MqttUidEncoding.Hex;
+    public bool UidReverseBytes { get; set; }
+    /// <summary>이 시간(ms) 동안 메시지가 없으면 사용불가로 본다. 0 이면 끔. 주기 발행 장치에서 켠다.</summary>
+    public int StaleMs { get; set; }
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public Core.CardFamily TagFamily { get; set; } = Core.CardFamily.Iso15693;
+
+    [JsonIgnore]
+    public string EffectiveName => string.IsNullOrWhiteSpace(Name) ? $"MQTT {Host}:{Port} {Topic}" : Name.Trim();
+
+    [JsonIgnore]
+    public string Password
+    {
+        get => Mqtt.Secret.Unprotect(PasswordProtected);
+        set => PasswordProtected = Mqtt.Secret.Protect(value);
+    }
+
+    /// <summary>같은 브로커 접속을 공유할 수 있는지 판별하는 키.</summary>
+    [JsonIgnore]
+    public string BrokerKey => $"{Host.Trim().ToLowerInvariant()}:{Port}|tls={UseTls}|ignore={IgnoreCertErrors}|u={Username}|p={PasswordProtected}|c={ClientId}";
+
+    public MqttReaderSettings Clone() => (MqttReaderSettings)MemberwiseClone();
+}
+
+public sealed class MqttSettings
+{
+    public bool Enabled { get; set; }
+    public int KeepAliveSec { get; set; } = 30;
+    public List<MqttReaderSettings> Readers { get; set; } = new();
+}
+
 public sealed class AppSettings
 {
     /// <summary>설정 파일 구조 버전. 구조가 바뀌면 올리고 SettingsStore.Migrate 에 변환을 추가한다.</summary>
@@ -140,6 +229,9 @@ public sealed class AppSettings
 
     /// <summary>산업용 리더(Modbus TCP) 입력.</summary>
     public ModbusSettings Modbus { get; set; } = new();
+
+    /// <summary>MQTT 구독 입력.</summary>
+    public MqttSettings Mqtt { get; set; } = new();
 
     /// <summary>하트비트(상태 메시지) 주기. 0이면 끔.</summary>
     public int HeartbeatSec { get; set; } = 60;

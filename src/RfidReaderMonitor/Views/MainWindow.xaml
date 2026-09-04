@@ -523,7 +523,8 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="리더" Binding="{Binding DisplayName}" Width="120"/>
+                                <DataGridTextColumn Header="별명" Binding="{Binding Alias}" Width="90"/>
+                                <DataGridTextColumn Header="리더" Binding="{Binding ReaderName}" Width="150"/>
                                 <DataGridTextColumn Header="UID" Binding="{Binding Uid}" Width="190" FontFamily="Consolas"/>
                                 <DataGridTextColumn Header="규격" Binding="{Binding Tech}" Width="*"/>
                                 <DataGridTextColumn Header="체류(ms)" Binding="{Binding DwellMs}" Width="80">
@@ -539,6 +540,7 @@
                             <DataGrid ItemsSource="{Binding RawSignals}" RowHeight="22" FontSize="11.5">
                                 <DataGrid.Columns>
                                     <DataGridTextColumn Header="시각" Binding="{Binding Time, StringFormat=HH:mm:ss.fff}" Width="100"/>
+                                    <DataGridTextColumn Header="별명" Binding="{Binding Alias}" Width="90"/>
                                     <DataGridTextColumn Header="리더" Binding="{Binding ReaderName}" Width="200"/>
                                     <DataGridTextColumn Header="상태" Binding="{Binding State}" Width="120"/>
                                     <DataGridTextColumn Header="비고" Binding="{Binding Note}" Width="*"/>

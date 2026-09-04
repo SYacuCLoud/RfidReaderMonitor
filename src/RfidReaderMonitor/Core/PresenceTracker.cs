@@ -18,7 +18,11 @@ public sealed record TrackerEvent(
     long? DwellMs);
 
 /// <summary>원신호 로그 한 줄.</summary>
-public sealed record RawSignal(DateTimeOffset Time, string ReaderName, string State, string Atr, string Note);
+public sealed record RawSignal(DateTimeOffset Time, string ReaderName, string State, string Atr, string Note)
+{
+    /// <summary>리더 별명. 추적기는 모르므로 화면 쪽에서 채운다.</summary>
+    public string Alias { get; init; } = "";
+}
 
 /// <summary>
 /// 원신호(PRESENT/EMPTY)를 확정 이벤트(등장/제거)로 바꾼다.

@@ -138,7 +138,7 @@ time,kind,alias,readerName,serial,uid,tech,atr,dwellMs,host
 
 장기 보관과 집계는 SQL Server 출력을 함께 켜서 하십시오. 하트비트는 SQL 쪽에서 `...Hosts` 테이블(이벤트 테이블 이름의 `Events` 를 `Hosts` 로 바꾼 이름)에 PC별 한 행으로 갱신됩니다.
 
-`kind`는 `등장`/`제거`, `alias`는 비어 있을 수 있습니다. 원신호(디바운스 전)는 `logs\raw\raw-YYYYMMDD.csv`에 별도로 남습니다.
+`kind`는 `등장`/`제거`, `alias`는 비어 있을 수 있습니다. 원신호(디바운스 전)는 `logs\raw\raw-YYYYMMDD.csv`에 별도로 남으며 열은 `time,alias,readerName,state,raw,note` 입니다. `raw`는 PC/SC 리더면 ATR, Modbus 리더면 레지스터 값입니다.
 
 ### SQL Server
 

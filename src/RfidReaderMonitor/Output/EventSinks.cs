@@ -49,6 +49,7 @@ public sealed record TagEvent(
         host = Host
     }, Envelope.JsonOpts);
 
+    /// <summary>이벤트 CSV 열. 원신호 CSV(raw-*.csv)도 time, alias, readerName 순서를 같게 맞춘다.</summary>
     public static string CsvHeader => "time,kind,alias,readerName,serial,uid,tech,atr,dwellMs,host";
 
     /// <summary>화면 복사용 (바인딩 대상).</summary>
@@ -56,9 +57,17 @@ public sealed record TagEvent(
 
     public string ToCsv() => string.Join(",",
         Time.ToString("yyyy-MM-dd HH:mm:ss.fff"),
-        KindText, Q(Alias), Q(ReaderName), Q(Serial), Q(Uid), Q(Tech), Q(Atr), DwellMs?.ToString() ?? "", Q(Host));
+        KindText, Csv.Q(Alias), Csv.Q(ReaderName), Csv.Q(Serial), Csv.Q(Uid), Csv.Q(Tech), Csv.Q(Atr), DwellMs?.ToString() ?? "", Csv.Q(Host));
+}
 
-    private static string Q(string s) => s.Contains(',') || s.Contains('"') ? "\"" + s.Replace("\"", "\"\"") + "\"" : s;
+/// <summary>CSV 필드 인용 규칙 하나로 통일. 쉼표·따옴표·줄바꿈이 있을 때만 감싼다.</summary>
+public static class Csv
+{
+    public static string Q(string? s)
+    {
+        s ??= "";
+        return s.IndexOfAny(new[] { ',', '"', '\n', '\r' }) >= 0 ? "\"" + s.Replace("\"", "\"\"") + "\"" : s;
+    }
 }
 
 public interface IEventSink : IAsyncDisposable
@@ -139,8 +148,11 @@ public sealed class RawSignalLogger
             {
                 var isNew = !File.Exists(path);
                 using var w = new StreamWriter(path, true, new UTF8Encoding(true));
-                if (isNew) w.WriteLine("time,reader,state,atr,note");
-                w.WriteLine($"{s.Time:yyyy-MM-dd HH:mm:ss.fff},\"{s.ReaderName}\",{s.State},{s.Atr},\"{s.Note.Replace("\"", "\"\"")}\"");
+                // 이벤트 CSV 와 같은 순서(time, alias, readerName …). raw 는 PC/SC 면 ATR, Modbus 면 레지스터 값.
+                if (isNew) w.WriteLine("time,alias,readerName,state,raw,note");
+                w.WriteLine(string.Join(",",
+                    s.Time.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+                    Csv.Q(s.Alias), Csv.Q(s.ReaderName), Csv.Q(s.State), Csv.Q(s.Atr), Csv.Q(s.Note)));
             }
         }
         catch (Exception ex)
