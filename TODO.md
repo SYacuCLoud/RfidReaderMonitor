@@ -35,4 +35,4 @@
 - [ ] ACR1552U PICC 파라미터의 ISO 15693 비트 위치 (현재 0x20 추정). 제조사 도구 탭 "직접 명령"으로 `E0 00 00 20 00` 응답 확인.
 - [ ] ACR1552U LED 비트 배치 (현재 0x0F 전체 ON으로만 시험). 색상별 비트 확인 후 UI에 색 선택 추가.
 - [ ] ISO 15693 UID 바이트 순서. 리더가 E0 로 시작하는 순서로 주는지, 역순인지 실물로 확인 후 기본값 결정.
-- [ ] Modbus TCP 리더 실물 레지스터 맵. Turck TBEN-S2-2RFID 또는 Balluff BIS V 문서로 Present 비트 위치, UID 레지스터 시작 주소, 워드 안 바이트 순서 확인. Modbus 시뮬레이터(예: ModbusPal, diagslave)로 프로바이더 동작 먼저 검증.
+- [ ] Modbus TCP 리더 실물 확인. **Turck TBEN-S2-2RFID-4DXP** 는 매뉴얼 7.2.8 맵을 프리셋으로 넣었음(TP = Holding 0x0002 비트 0, UID = Holding 0x000C~, 바이트 스왑). 실물에서 UID 가 E0 로 시작하는지(워드 역순 여부)만 연결 테스트로 확인. **Balluff BIS V** 는 Modbus TCP 변종이 없음(구형 BIS M-626/U-626 만, 명령·응답 핸드셰이크 방식 → 별도 드라이버 필요). Balluff/IFM 헤드는 Modbus TCP 지원 IO-Link 마스터 경로로 갈 것. 문서 없는 장치는 등록 대화상자의 레지스터 스캐너로 위치를 찾는다.

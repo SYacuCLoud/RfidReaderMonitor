@@ -20,7 +20,7 @@ A Windows desktop tool for PC/SC RFID readers: lists readers, maps each reader's
 | 하드웨어 S/N | `SCARD_ATTR_VENDOR_IFD_SERIAL_NO` → 없으면 레지스트리 `ParentIdPrefix`로 USB 부모 장치의 시리얼 → 없으면 USB 포트 경로 |
 | 별명 | S/N을 키로 저장. 리더를 다른 USB 포트에 꽂아도 별명 유지. 입력 즉시 자동 저장 |
 | 원신호 | `SCardGetStatusChange` 기반 PRESENT/EMPTY. 사용중(EXCLUSIVE)·무응답(MUTE)·사용불가 구분 |
-| 산업용 리더 입력 | Modbus TCP 를 여는 장치(Turck TBEN, Balluff BIS V, IO-Link 마스터 등)의 Tag Present 비트와 UID 레지스터를 폴링. 리더 목록의 "＋ 리더 추가"(또는 우클릭 편집·삭제)로 등록 대화상자를 열어 레지스터 맵(영역·주소·비트·바이트 순서)을 입력하고, 같은 창의 **연결 테스트**로 저장 전에 원값을 보며 맞춤. 프리셋 제공. PC/SC 리더와 같은 화면·이벤트·출력으로 합쳐짐 |
+| 산업용 리더 입력 | Modbus TCP 를 여는 장치(Turck TBEN, Balluff BIS V, IO-Link 마스터 등)의 Tag Present 비트와 UID 레지스터를 폴링. 리더 목록의 "＋ 리더 추가"(또는 우클릭 편집·삭제)로 등록 대화상자를 열어 레지스터 맵(영역·주소·비트·바이트 순서)을 입력하고, 같은 창의 **연결 테스트**로 저장 전에 원값을 보며 맞춤. 프리셋(Turck TBEN-S2-2RFID-4DXP 채널 0/1, 시뮬레이터, 일반형) 제공. 문서가 없는 장치는 **레지스터 스캐너**로 태그 유무에 따라 바뀌는 비트·워드를 찾아 폼에 채움. PC/SC 리더와 같은 화면·이벤트·출력으로 합쳐짐 |
 | UID 읽기 | PC/SC GET DATA (`FF CA 00 00 00`). ATR로 카드 규격(ISO 14443A/B, ISO 15693, FeliCa …) 판별, ISO 15693 UID 역순 표시 옵션 |
 | 디바운스 | UID를 확인해야 등장 확정(최대 1.5 s 재시도). EMPTY가 T_off 이상 지속되어야 제거 확정. T_off 안의 재등장은 무시. 제거 이벤트에 체류 시간 포함 |
 | 라이브 배너·대시보드 | 최근 이벤트를 큰 글씨와 애니메이션으로 표시. 리더 수, 감지 중 리더, 오늘 등장/제거, 평균 체류, 출력 상태 타일 |

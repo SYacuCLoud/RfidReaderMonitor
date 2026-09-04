@@ -6,7 +6,7 @@
         xmlns:vm="clr-namespace:RfidReaderMonitor.ViewModels"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:ModbusReaderEditorViewModel}"
-        Title="{Binding Title}" Width="900" SizeToContent="Height" MinHeight="520"
+        Title="{Binding Title}" Width="900" SizeToContent="Height" MinHeight="520" MaxHeight="980"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         FontFamily="Malgun Gothic" FontSize="12.5" Background="#F4F5F7">
     <Window.Resources>
@@ -28,6 +28,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
@@ -168,8 +169,46 @@
             </StackPanel>
         </GroupBox>
 
+        <!-- 레지스터 스캐너 (맵을 모를 때) -->
+        <Expander Grid.Row="2" Grid.ColumnSpan="3" Margin="0,8,0,0" IsExpanded="False">
+            <Expander.Header>
+                <TextBlock Text="레지스터 스캐너 — 문서가 없는 장치에서 Present 비트와 UID 위치 찾기" FontWeight="SemiBold"/>
+            </Expander.Header>
+            <Border Background="White" BorderBrush="#D8DBE0" BorderThickness="1" Padding="10" Margin="0,4,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Label}" TextWrapping="Wrap" Margin="0,0,0,6"
+                               Text="태그를 치운 상태에서 '기준 기록'을 누르고, '실시간 비교 시작' 후 태그를 놓으면 기준과 달라진 레지스터·비트만 아래에 나옵니다. 비트 하나만 0→1 로 바뀐 것이 Present, 연속 4워드가 0에서 값으로 바뀐 것이 UID 입니다. 행을 고르고 아래 버튼으로 폼에 채우세요. 위의 호스트·포트·Unit ID 를 씁니다."/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="영역" Style="{StaticResource FormLabel}"/>
+                        <ComboBox ItemsSource="{x:Static vm:ModbusReaderEditorViewModel.Areas}" SelectedItem="{Binding ScanArea}" Width="150" Margin="0,0,12,0"/>
+                        <TextBlock Text="시작" Style="{StaticResource FormLabel}"/>
+                        <TextBox Text="{Binding ScanStart, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="0,0,12,0"/>
+                        <TextBlock Text="개수" Style="{StaticResource FormLabel}"/>
+                        <TextBox Text="{Binding ScanCount, UpdateSourceTrigger=PropertyChanged}" Width="60" Margin="0,0,16,0"/>
+                        <Button Content="기준 기록 (태그 없음)" Command="{Binding CaptureBaselineCommand}" MinWidth="130" Margin="0,0,8,0"/>
+                        <Button Content="{Binding ScanButtonText}" Command="{Binding ToggleScanLiveCommand}" MinWidth="130"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding ScanStatus}" Foreground="{Binding ScanStatusColor}" TextWrapping="Wrap" Margin="0,6,0,4"/>
+                    <DataGrid ItemsSource="{Binding ScanRows}" SelectedItem="{Binding SelectedScanRow}" AutoGenerateColumns="False" IsReadOnly="True"
+                              HeadersVisibility="Column" GridLinesVisibility="Horizontal" RowHeight="24" MaxHeight="190" FontSize="12" FontFamily="Consolas">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="주소" Binding="{Binding AddressText}" Width="120"/>
+                            <DataGridTextColumn Header="기준" Binding="{Binding BeforeText}" Width="80"/>
+                            <DataGridTextColumn Header="지금" Binding="{Binding AfterText}" Width="80"/>
+                            <DataGridTextColumn Header="바뀐 비트" Binding="{Binding ChangedBitsText}" Width="220"/>
+                            <DataGridTextColumn Header="판단" Binding="{Binding Hint}" Width="*" FontFamily="Malgun Gothic"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button Content="선택 행 → Present 위치로" Command="{Binding UseRowAsPresentCommand}" MinWidth="160" Margin="0,0,8,0"/>
+                        <Button Content="선택 행 → UID 시작 주소로" Command="{Binding UseRowAsUidCommand}" MinWidth="160"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Expander>
+
         <!-- 버튼 -->
-        <DockPanel Grid.Row="2" Grid.ColumnSpan="3" Margin="0,10,0,0">
+        <DockPanel Grid.Row="3" Grid.ColumnSpan="3" Margin="0,10,0,0">
             <TextBlock Text="{Binding ErrorText}" Foreground="#B03A2E" VerticalAlignment="Center" TextWrapping="Wrap"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" DockPanel.Dock="Right">
                 <Button Content="확인" Command="{Binding OkCommand}" MinWidth="90" IsDefault="True" FontWeight="SemiBold" Margin="0,0,8,0"/>
