@@ -13,6 +13,11 @@
         FontFamily="Malgun Gothic" FontSize="12.5"
         Background="#F4F5F7">
 
+    <Window.InputBindings>
+        <!-- 개발자 모드 토글 (숨김 기능) -->
+        <KeyBinding Modifiers="Ctrl+Shift" Key="D" Command="{Binding ToggleDeveloperModeCommand}"/>
+    </Window.InputBindings>
+
     <Window.Resources>
         <!-- 공통 스타일(Head, Label, Value, Mono, CopyBox, StateBadge, KindCell, BoolToVis 등)은 App.xaml 에 있다. -->
 
@@ -275,13 +280,24 @@
 
             <!-- 왼쪽: 리더 목록 -->
             <DockPanel Grid.Column="0">
-                <TextBlock DockPanel.Dock="Top" Text="리더" Style="{StaticResource Head}" Margin="0,0,0,4"/>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+                    <Button DockPanel.Dock="Right" Content="＋ 리더 추가" Command="{Binding AddModbusReaderCommand}" Padding="10,2"
+                            ToolTip="산업용 리더(Modbus TCP)를 등록합니다. USB PC/SC 리더는 꽂으면 자동으로 나타납니다."/>
+                    <TextBlock Text="리더" Style="{StaticResource Head}" VerticalAlignment="Center"/>
+                </DockPanel>
                 <DataGrid ItemsSource="{Binding Readers}" SelectedItem="{Binding SelectedReader}" ClipboardCopyMode="ExcludeHeader">
                     <DataGrid.ContextMenu>
                         <ContextMenu>
                             <MenuItem Header="UID 복사" Command="{Binding CopyTextCommand}" CommandParameter="{Binding SelectedReader.Uid}"/>
                             <MenuItem Header="S/N 복사" Command="{Binding CopyTextCommand}" CommandParameter="{Binding SelectedReader.Serial}"/>
-                            <MenuItem Header="PC/SC 이름 복사" Command="{Binding CopyTextCommand}" CommandParameter="{Binding SelectedReader.Name}"/>
+                            <MenuItem Header="이름 복사" Command="{Binding CopyTextCommand}" CommandParameter="{Binding SelectedReader.Name}"/>
+                            <Separator Visibility="{Binding SelectedReader.IsModbus, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}"/>
+                            <MenuItem Header="리더 편집…" Command="{Binding EditModbusReaderCommand}" CommandParameter="{Binding SelectedReader}"
+                                      Visibility="{Binding SelectedReader.IsModbus, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}"/>
+                            <MenuItem Header="리더 삭제" Command="{Binding DeleteModbusReaderCommand}" CommandParameter="{Binding SelectedReader}"
+                                      Visibility="{Binding SelectedReader.IsModbus, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}"/>
+                            <Separator/>
+                            <MenuItem Header="＋ 리더 추가…" Command="{Binding AddModbusReaderCommand}"/>
                         </ContextMenu>
                     </DataGrid.ContextMenu>
                     <DataGrid.Columns>
@@ -297,7 +313,8 @@
                         <DataGridTextColumn Header="별명" Binding="{Binding Alias}" Width="90"/>
                         <DataGridTextColumn Header="S/N" Binding="{Binding Serial}" Width="110" FontFamily="Consolas"/>
                         <DataGridTextColumn Header="UID" Binding="{Binding Uid}" Width="*" FontFamily="Consolas"/>
-                        <DataGridTextColumn Header="PC/SC 이름" Binding="{Binding Name}" Width="220"/>
+                        <DataGridTextColumn Header="이름" Binding="{Binding Name}" Width="200"/>
+                        <DataGridTextColumn Header="연결" Binding="{Binding Connection}" Width="170" Foreground="#666"/>
                     </DataGrid.Columns>
                 </DataGrid>
             </DockPanel>
@@ -305,7 +322,7 @@
             <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="Transparent"/>
 
             <!-- 오른쪽: 탭 -->
-            <TabControl Grid.Column="2" Background="White" BorderBrush="#D8DBE0">
+            <TabControl Grid.Column="2" Background="White" BorderBrush="#D8DBE0" SelectedIndex="{Binding SelectedTabIndex}">
 
                 <!-- ============ 리더 상세 ============ -->
                 <TabItem Header="리더 상세">
@@ -335,7 +352,8 @@
                                     </Style>
                                 </StackPanel.Style>
 
-                                <GroupBox Header="식별">
+                                <!-- 식별 (Modbus TCP 리더) -->
+                                <GroupBox Header="식별" Visibility="{Binding IsModbus, Converter={StaticResource BoolToVis}}">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="120"/>
@@ -345,8 +363,46 @@
                                             <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                                             <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                                         </Grid.RowDefinitions>
-                                        <TextBlock Grid.Row="0" Text="PC/SC 이름" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="0" Text="이름" Style="{StaticResource Label}"/>
                                         <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Name}" Style="{StaticResource Value}"/>
+                                        <StackPanel Grid.Row="7" Grid.Column="1" Orientation="Horizontal" Margin="0,6,0,0">
+                                            <Button Content="편집…" Command="{Binding DataContext.EditModbusReaderCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                            <Button Content="삭제" Command="{Binding DataContext.DeleteModbusReaderCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="1" Text="연결" Style="{StaticResource Label}"/>
+                                        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
+                                            <TextBlock Text="{Binding KindText}" Style="{StaticResource Value}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding ModbusEndpoint, StringFormat='   {0}'}" Style="{StaticResource Value}"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="2" Text="접속 상태" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ModbusLinkText}" Foreground="{Binding ModbusLinkColor}" Style="{StaticResource Value}" FontWeight="SemiBold"/>
+                                        <TextBlock Grid.Row="3" Text="Present 위치" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding ModbusPresentMap}" Style="{StaticResource Value}"/>
+                                        <TextBlock Grid.Row="4" Text="UID 위치" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ModbusUidMap}" Style="{StaticResource Value}"/>
+                                        <TextBlock Grid.Row="5" Text="폴링 주기" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding ModbusPollText}" Style="{StaticResource Value}"/>
+                                        <TextBlock Grid.Row="6" Text="설정 키" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding Key}" Style="{StaticResource Mono}" Foreground="#888"/>
+                                    </Grid>
+                                </GroupBox>
+
+                                <!-- 식별 (PC/SC USB 리더) -->
+                                <GroupBox Header="식별" Visibility="{Binding IsPcsc, Converter={StaticResource BoolToVis}}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="120"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Grid.Row="0" Text="이름 (PC/SC)" Style="{StaticResource Label}"/>
+                                        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Name}" Style="{StaticResource Value}"/>
+                                            <TextBlock Text="{Binding KindText, StringFormat='   [{0}]'}" Style="{StaticResource Value}" Foreground="#888"/>
+                                        </StackPanel>
                                         <TextBlock Grid.Row="1" Text="제조사 / 모델" Style="{StaticResource Label}"/>
                                         <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
                                             <TextBlock Text="{Binding Vendor}" Style="{StaticResource Value}"/>
@@ -419,10 +475,10 @@
                                                     CommandParameter="{Binding Uid}"/>
                                             <TextBlock Text="{Binding UidLength, StringFormat='  {0}'}" Style="{StaticResource Value}" Foreground="#888"/>
                                         </StackPanel>
-                                        <TextBlock Grid.Row="2" Text="카드 규격" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="2" Text="규격" Style="{StaticResource Label}"/>
                                         <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Tech}" Style="{StaticResource Value}"/>
-                                        <TextBlock Grid.Row="3" Text="ATR" Style="{StaticResource Label}"/>
-                                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Atr}" Style="{StaticResource Mono}" FontSize="11"/>
+                                        <TextBlock Grid.Row="3" Text="ATR" Style="{StaticResource Label}" Visibility="{Binding IsPcsc, Converter={StaticResource BoolToVis}}"/>
+                                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Atr}" Style="{StaticResource Mono}" FontSize="11" Visibility="{Binding IsPcsc, Converter={StaticResource BoolToVis}}"/>
                                         <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Margin="0,6,0,0">
                                             <Button Content="UID 지금 읽기" Command="{Binding DataContext.ReadUidNowCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
                                             <Button Content="리더 정보 갱신" Command="{Binding DataContext.ReIdentifyCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
@@ -486,7 +542,7 @@
                                     <DataGridTextColumn Header="리더" Binding="{Binding ReaderName}" Width="200"/>
                                     <DataGridTextColumn Header="상태" Binding="{Binding State}" Width="120"/>
                                     <DataGridTextColumn Header="비고" Binding="{Binding Note}" Width="*"/>
-                                    <DataGridTextColumn Header="ATR" Binding="{Binding Atr}" Width="240" FontFamily="Consolas"/>
+                                    <DataGridTextColumn Header="원값 (ATR / 레지스터)" Binding="{Binding Atr}" Width="240" FontFamily="Consolas"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>
@@ -517,7 +573,7 @@
                     </StackPanel>
                 </TabItem>
 
-                <!-- ============ 제조사 도구 (선택 리더의 제조사에 따라 내용이 바뀜) ============ -->
+                <!-- ============ 리더 도구 (선택 리더의 종류·제조사에 따라 내용이 바뀜: ACS 에스케이프 / Modbus 레지스터 진단) ============ -->
                 <TabItem>
                     <TabItem.Header>
                         <TextBlock Text="{Binding VendorToolsHeader}"/>
@@ -539,9 +595,19 @@
                                 <DataTemplate DataType="{x:Type vm:AcsToolsViewModel}">
                                     <views:AcsToolsView/>
                                 </DataTemplate>
+                                <DataTemplate DataType="{x:Type vm:ModbusToolsViewModel}">
+                                    <views:ModbusToolsView/>
+                                </DataTemplate>
                             </ContentControl.Resources>
                         </ContentControl>
                     </Grid>
+                </TabItem>
+
+                <!-- ============ 개발자 (숨김. Ctrl+Shift+D 또는 dev 인자) ============ -->
+                <TabItem Header="개발자" Visibility="{Binding DeveloperMode, Converter={StaticResource BoolToVis}}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <views:DevToolsView DataContext="{Binding DevTools}"/>
+                    </ScrollViewer>
                 </TabItem>
 
                 <!-- ============ 설정 ============ -->
@@ -556,8 +622,22 @@
                                         <TextBlock Text="  EMPTY가 이 시간 이상 유지되면 제거로 확정. 즉시 저장됨." Style="{StaticResource Label}"/>
                                     </StackPanel>
                                     <CheckBox Content="ISO 15693 UID 역순 표시 (리더가 LSB 우선으로 줄 때)" IsChecked="{Binding ReverseIso15693}"/>
-                                    <CheckBox Content="등장 시 리더 부저 (ACS, EscapeCommandEnable 필요)" IsChecked="{Binding BeepOnAppear}"/>
                                     <CheckBox Content="원신호를 raw-*.csv 로 남김" IsChecked="{Binding LogRawEvents}"/>
+                                </StackPanel>
+                            </GroupBox>
+
+                            <GroupBox Header="산업용 리더 입력 (Modbus TCP)">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <CheckBox Content="Modbus TCP 리더 사용" IsChecked="{Binding ModbusEnabled}" VerticalAlignment="Center" Margin="0,0,16,0"
+                                                  ToolTip="끄면 등록된 리더가 모두 목록에서 빠집니다. 등록 내용은 남습니다."/>
+                                        <TextBlock Text="응답 대기(ms)" Style="{StaticResource Label}" VerticalAlignment="Center"/>
+                                        <TextBox Text="{Binding ModbusTimeoutMs}" Width="60" Margin="0,0,16,0"/>
+                                        <Button Content="＋ 리더 추가…" Command="{Binding AddModbusReaderCommand}" Margin="0,0,12,0"/>
+                                        <TextBlock Text="{Binding ModbusStatusText}" Style="{StaticResource Label}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <TextBlock Style="{StaticResource Label}" TextWrapping="Wrap" Margin="0,4,0,0"
+                                               Text="리더 등록·편집·삭제는 왼쪽 리더 목록에서 합니다 ('＋ 리더 추가', 우클릭 메뉴). 등록 대화상자에 연결 테스트가 있어 저장 전에 주소와 바이트 순서를 맞출 수 있습니다."/>
                                 </StackPanel>
                             </GroupBox>
 
@@ -642,9 +722,13 @@
                                 </StackPanel>
                             </GroupBox>
 
-                            <GroupBox Header="Windows 점검">
-                                <StackPanel>
-                                    <StackPanel Orientation="Horizontal">
+                            <Expander IsExpanded="{Binding HasPcscReaders}" Margin="0,4,0,0">
+                                <Expander.Header>
+                                    <TextBlock Text="PC/SC(USB) 리더 전용 — 부저, 스마트카드 서비스, Windows 점검" FontWeight="SemiBold"/>
+                                </Expander.Header>
+                                <StackPanel Margin="18,4,0,0">
+                                    <CheckBox Content="등장 시 리더 부저 (ACS, EscapeCommandEnable 필요)" IsChecked="{Binding BeepOnAppear}"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                         <TextBlock Text="{Binding ScPnpText}" Style="{StaticResource Value}"/>
                                         <Button Content="정책 적용 (관리자)" Margin="12,0,0,0" Command="{Binding ApplyScPnpCommand}"
                                                 Visibility="{Binding ScPnpNeedsAction, Converter={StaticResource BoolToVis}}"/>
@@ -653,15 +737,15 @@
                                                 Visibility="{Binding ScPnpIsDisabled, Converter={StaticResource BoolToVis}}"/>
                                     </StackPanel>
                                     <TextBlock Text="{Binding ScardServiceText}" Style="{StaticResource Value}"/>
-                                    <TextBlock Text="{Binding SettingsPath, StringFormat='설정 파일: {0}'}" Style="{StaticResource Value}" Foreground="#888"/>
                                     <Button Content="다시 점검" HorizontalAlignment="Left" Margin="0,6,0,0" Command="{Binding CheckSystemCommand}"/>
                                 </StackPanel>
-                            </GroupBox>
+                            </Expander>
 
-                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                <TextBlock Text="모든 항목은 바꾸는 즉시 저장·적용됩니다." Style="{StaticResource Label}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="모든 항목은 바꾸는 즉시 저장·적용됩니다 (Modbus 리더 표는 '적용' 버튼)." Style="{StaticResource Label}"/>
                                 <TextBlock Text="{Binding LastSavedText}" Style="{StaticResource Label}" Foreground="#2E7D32" Margin="8,2,0,2"/>
                             </StackPanel>
+                            <TextBlock Text="{Binding SettingsPath, StringFormat='설정 파일: {0}'}" Style="{StaticResource Value}" Foreground="#888"/>
                         </StackPanel>
                     </ScrollViewer>
                 </TabItem>

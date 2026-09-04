@@ -8,8 +8,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using RfidReaderMonitor.Acs;
 using RfidReaderMonitor.Core;
+using RfidReaderMonitor.Modbus;
 using RfidReaderMonitor.Output;
-using RfidReaderMonitor.PcSc;
 using RfidReaderMonitor.Readers;
 using RfidReaderMonitor.Settings;
 using RfidReaderMonitor.Sys;
@@ -31,7 +31,8 @@ public sealed partial class MainViewModel : ObservableObject
     private const int MaxRaw = 3000;
 
     private readonly AppSettings _settings;
-    private readonly PcscReaderProvider _provider;
+    private readonly IRfidReaderProvider _provider;
+    private readonly ModbusReaderProvider _modbus;
     private readonly PresenceTracker _tracker;
     private readonly EventDispatcher _dispatcher;
     private readonly RawSignalLogger _rawLogger;
@@ -211,10 +212,29 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private int _heartbeatSec;
     [ObservableProperty] private bool _autostartEnabled;
 
-    // 제조사 도구 (선택 리더의 제조사에 맞는 뷰모델, 없으면 null)
+    // 입력: 산업용 리더 (Modbus TCP). 리더 등록·편집은 대화상자, 켬/끔과 응답 대기는 설정 탭.
+    [ObservableProperty] private bool _modbusEnabled;
+    [ObservableProperty] private int _modbusTimeoutMs = 1000;
+    [ObservableProperty] private string _modbusStatusText = "";
+    /// <summary>등록 대화상자를 띄우는 훅. MainWindow 가 채운다. 확인이면 true.</summary>
+    public Func<ModbusReaderEditorViewModel, bool>? ShowModbusEditor { get; set; }
+    /// <summary>삭제 확인 훅. MainWindow 가 채운다. null 이면 확인 없이 삭제.</summary>
+    public Func<string, bool>? ConfirmDelete { get; set; }
+
+    // 개발자 모드 (숨김 탭). Ctrl+Shift+D 또는 --dev.
+    [ObservableProperty] private bool _developerMode;
+    public DevToolsViewModel DevTools { get; }
+
+    // 리더 도구 (선택 리더의 종류·제조사에 맞는 뷰모델, 없으면 null)
     private readonly AcsToolsViewModel _acsTools;
+    private readonly ModbusToolsViewModel _modbusTools;
+    /// <summary>오른쪽 탭 인덱스. 0 리더 상세, 1 이벤트, 2 인식률, 3 리더 도구, 4 개발자, 5 설정.</summary>
+    [ObservableProperty] private int _selectedTabIndex;
+    public const int SettingsTabIndex = 5;
+    /// <summary>PC/SC 리더가 하나라도 있으면 PC/SC 전용 설정 묶음을 펼친다.</summary>
+    [ObservableProperty] private bool _hasPcscReaders = true;
     [ObservableProperty] private object? _vendorTools;
-    [ObservableProperty] private string _vendorToolsHeader = "제조사 도구";
+    [ObservableProperty] private string _vendorToolsHeader = "리더 도구";
     [ObservableProperty] private string _vendorToolsMessage = "리더를 선택하세요.";
 
     // 인식률 시험
@@ -228,16 +248,19 @@ public sealed partial class MainViewModel : ObservableObject
     public string SettingsPath => SettingsStore.SettingsPath;
     public string AppVersion => typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "?";
 
-    public MainViewModel(AppSettings settings, PcscReaderProvider provider, PresenceTracker tracker,
+    public MainViewModel(AppSettings settings, IRfidReaderProvider provider, ModbusReaderProvider modbus, PresenceTracker tracker,
         EventDispatcher dispatcher, RawSignalLogger rawLogger, Dispatcher ui)
     {
         _settings = settings;
         _provider = provider;
+        _modbus = modbus;
         _tracker = tracker;
         _dispatcher = dispatcher;
         _rawLogger = rawLogger;
         _ui = ui;
         _acsTools = new AcsToolsViewModel(provider, msg => StatusMessage = msg);
+        _modbusTools = new ModbusToolsViewModel(_modbus, ui, EditModbusReaderByName, msg => StatusMessage = msg);
+        DevTools = new DevToolsViewModel(ui, preset => OpenModbusEditor(preset, isNew: true));
 
         LoadSettingsToProperties();
 
@@ -267,6 +290,17 @@ public sealed partial class MainViewModel : ObservableObject
             RefreshDashboardSinks();
         });
         _dispatcher.SinksChanged += () => _ui.BeginInvoke(RefreshSinkStatuses);
+
+        _modbus.ReaderConnectionChanged += (name, connected, error) => _ui.BeginInvoke(() =>
+        {
+            var vm = Readers.FirstOrDefault(r => r.Name == name);
+            if (vm is not null)
+            {
+                vm.ModbusLinkText = connected ? "● 연결됨" : "○ 끊김 " + error;
+                vm.ModbusLinkColor = connected ? "#2E7D32" : "#C77700";
+            }
+            RefreshModbusStatusText();
+        });
     }
 
     // ------------------------------------------------------------ 초기화
@@ -346,6 +380,11 @@ public sealed partial class MainViewModel : ObservableObject
         TestIntervalMs = _settings.TestIntervalMs;
         AutostartEnabled = SystemChecks.IsAutostartEnabled();
 
+        DeveloperMode = _settings.DeveloperMode;
+        ModbusEnabled = _settings.Modbus.Enabled;
+        ModbusTimeoutMs = _settings.Modbus.TimeoutMs;
+        RefreshModbusStatusText();
+
         _tracker.RemovalDebounceMs = RemovalDebounceMs;
         _tracker.ReverseIso15693 = ReverseIso15693;
         _rawLogger.Enabled = LogRawEvents;
@@ -364,19 +403,29 @@ public sealed partial class MainViewModel : ObservableObject
             VendorToolsMessage = "리더를 선택하세요.";
             return;
         }
+        if (r.IsModbus)
+        {
+            _acsTools.Reader = null;
+            _modbusTools.Reader = r;
+            VendorTools = _modbusTools;
+            VendorToolsHeader = "리더 도구 (Modbus TCP)";
+            VendorToolsMessage = "";
+            return;
+        }
+        _modbusTools.Reader = null;
         if (AcsToolsViewModel.Supports(r))
         {
             _acsTools.Reader = r;
             VendorTools = _acsTools;
-            VendorToolsHeader = "제조사 도구 (ACS)";
+            VendorToolsHeader = "리더 도구 (ACS)";
             VendorToolsMessage = "";
             return;
         }
         VendorTools = null;
-        VendorToolsHeader = "제조사 도구";
+        VendorToolsHeader = "리더 도구";
         VendorToolsMessage = string.IsNullOrWhiteSpace(r.Vendor)
             ? "리더 정보를 아직 읽지 못했습니다. 잠시 후 다시 선택하거나 '리더 정보 갱신'을 누르세요."
-            : $"이 리더(제조사 {r.Vendor})에 맞는 제조사 도구가 없습니다. 표준 PC/SC 기능은 모두 사용할 수 있습니다.";
+            : $"이 리더(제조사 {r.Vendor})에 맞는 도구가 없습니다. 표준 PC/SC 기능은 모두 사용할 수 있습니다.";
     }
 
     // 모든 설정 항목은 바뀌는 즉시(0.5초 뒤 한 번에) 저장·적용된다. 저장 버튼은 없다.
@@ -403,6 +452,20 @@ public sealed partial class MainViewModel : ObservableObject
     partial void OnSqlTableChanged(string value) { UpdateSqlUi(); ScheduleSettingsSave(); }
     partial void OnSqlAutoCreateChanged(bool value) { UpdateSqlUi(); ScheduleSettingsSave(); }
     partial void OnSqlEnabledChanged(bool value) { UpdateSqlUi(); ScheduleSettingsSave(); }
+
+    partial void OnModbusEnabledChanged(bool value) => ScheduleSettingsSave();
+    partial void OnModbusTimeoutMsChanged(int value) => ScheduleSettingsSave();
+
+    partial void OnDeveloperModeChanged(bool value)
+    {
+        _settings.DeveloperMode = value;
+        if (_loadingSettings) return;
+        ScheduleSettingsSave();
+        StatusMessage = value ? "개발자 모드 켬 — '개발자' 탭이 보입니다 (Ctrl+Shift+D 로 끔)" : "개발자 모드 끔";
+    }
+
+    [RelayCommand]
+    private void ToggleDeveloperMode() => DeveloperMode = !DeveloperMode;
 
     partial void OnAutostartEnabledChanged(bool value)
     {
@@ -440,7 +503,10 @@ public sealed partial class MainViewModel : ObservableObject
             var vm = Readers.FirstOrDefault(r => r.Name == n);
             if (vm is null)
             {
-                vm = new ReaderItemViewModel(n);
+                ReaderKind kind;
+                try { kind = _provider.KindOf(n); } catch { kind = ReaderKind.PcSc; }
+                vm = new ReaderItemViewModel(n, kind);
+                if (kind == ReaderKind.Modbus) FillModbusInfo(vm);
                 vm.PropertyChanged += (s, e) =>
                 {
                     // 별명/메모는 입력하면 자동 저장 (저장 버튼은 즉시 저장용으로 유지)
@@ -455,7 +521,29 @@ public sealed partial class MainViewModel : ObservableObject
 
         SelectedReader ??= Readers.FirstOrDefault();
         if (SelectedReader is not null && !Readers.Contains(SelectedReader)) SelectedReader = Readers.FirstOrDefault();
+        HasPcscReaders = Readers.Count == 0 || Readers.Any(r => r.IsPcsc);
         RefreshDashboardReaders();
+    }
+
+    /// <summary>Modbus 리더의 설정값을 상세 화면용 글자로 채운다. Identify 를 기다리지 않고 바로 보인다.</summary>
+    private void FillModbusInfo(ReaderItemViewModel vm)
+    {
+        var c = _modbus.ConfigOf(vm.Name);
+        if (c is null) return;
+        vm.Connection = $"Modbus TCP {c.Host}:{c.Port}/{c.UnitId}";
+        vm.ModbusEndpoint = $"{c.Host}:{c.Port}  Unit {c.UnitId}";
+        vm.ModbusPresentMap = ModbusRfidMap.DescribePresent(c);
+        vm.ModbusUidMap = ModbusRfidMap.DescribeUid(c);
+        vm.ModbusPollText = $"{c.PollMs} ms";
+        vm.Tech = c.TagFamily switch
+        {
+            CardFamily.Iso15693 => "ISO 15693 (설정값)",
+            CardFamily.Unknown => "",
+            _ => $"{c.TagFamily} (설정값)"
+        };
+        var d = _modbus.Diagnostics(vm.Name);
+        vm.ModbusLinkText = d is null ? "" : d.Connected ? "● 연결됨" : "○ 접속 중…";
+        vm.ModbusLinkColor = d?.Connected == true ? "#2E7D32" : "#C77700";
     }
 
     private async Task IdentifyAsync(ReaderItemViewModel vm)
@@ -467,7 +555,25 @@ public sealed partial class MainViewModel : ObservableObject
             vm.IfdType = id.IfdType ?? "";
             vm.IfdVersion = id.IfdVersion ?? "";
 
+            if (vm.IsModbus)
+            {
+                // 산업용 리더: USB 매핑 없음. 키는 호스트:포트/유닛이라 이름을 바꿔도 별명이 따라간다.
+                FillModbusInfo(vm);
+                vm.Serial = id.Serial ?? "";
+                vm.SerialSource = "호스트:포트/유닛";
+                vm.Key = !string.IsNullOrWhiteSpace(vm.Serial) ? "modbus:" + vm.Serial : "name:" + vm.Name;
+                var mp = _settings.GetOrCreate(vm.Key);
+                vm.Alias = mp.Alias;
+                vm.Note = mp.Note;
+                mp.LastName = vm.Name;
+                mp.LastSeen = DateTimeOffset.Now;
+                SettingsStore.Save(_settings);
+                if (vm == SelectedReader) UpdateVendorTools();
+                return;
+            }
+
             var dev = UsbDeviceMapper.Match(_devices, id.Serial, vm.Name);
+            vm.Connection = "USB PC/SC" + (dev?.PortPath is not null ? $"  포트 {dev.PortPath}" : "");
             if (!string.IsNullOrWhiteSpace(id.Serial))
             {
                 vm.Serial = id.Serial;
@@ -769,12 +875,16 @@ public sealed partial class MainViewModel : ObservableObject
         _settings.HeartbeatSec = Math.Max(0, HeartbeatSec);
         _settings.TestDurationSec = TestDurationSec;
         _settings.TestIntervalMs = TestIntervalMs;
+        var modbusChanged = _settings.Modbus.Enabled != ModbusEnabled || _settings.Modbus.TimeoutMs != Math.Max(200, ModbusTimeoutMs);
+        _settings.Modbus.Enabled = ModbusEnabled;
+        _settings.Modbus.TimeoutMs = Math.Max(200, ModbusTimeoutMs);
         SettingsStore.Save(_settings);
         if (AutostartEnabled) SystemChecks.SetAutostart(true, StartMinimized);
 
         var sinksChanged = SinkSignature() != sinkSigBefore;
         if (sinksChanged) await ApplySinksAsync();
         if (_settings.HeartbeatSec != heartbeatBefore) RestartHeartbeatTimer();
+        if (modbusChanged) { _modbus.Configure(_settings.Modbus); RefreshModbusStatusText(); }
 
         LastSavedText = $"저장됨 {DateTime.Now:HH:mm:ss}" + (sinksChanged ? " · 출력 재구성" : "");
         StatusMessage = "설정 " + LastSavedText;
@@ -903,6 +1013,98 @@ public sealed partial class MainViewModel : ObservableObject
         UpdateSqlUi();
     }
 
+    // ------------------------------------------------------------ 명령: 산업용 리더 (Modbus TCP)
+
+    /// <summary>왼쪽 리더 목록의 "＋ 리더 추가". PC/SC 는 꽂으면 자동으로 뜨므로 손으로 넣는 것은 Modbus 리더다.</summary>
+    [RelayCommand]
+    private void AddModbusReader() => OpenModbusEditor(new ModbusReaderSettings(), isNew: true);
+
+    /// <summary>선택 리더(Modbus)의 설정을 대화상자로 편집.</summary>
+    [RelayCommand]
+    private void EditModbusReader(ReaderItemViewModel? reader)
+    {
+        reader ??= SelectedReader;
+        if (reader is null || !reader.IsModbus) return;
+        EditModbusReaderByName(reader.Name);
+    }
+
+    private void EditModbusReaderByName(string name)
+    {
+        var existing = _settings.Modbus.Readers.FirstOrDefault(r => string.Equals(r.EffectiveName, name, StringComparison.OrdinalIgnoreCase));
+        if (existing is null) { StatusMessage = $"설정에 없는 리더: {name}"; return; }
+        OpenModbusEditor(existing, isNew: false);
+    }
+
+    /// <summary>선택 리더(Modbus)를 설정에서 지우고 즉시 반영.</summary>
+    [RelayCommand]
+    private void DeleteModbusReader(ReaderItemViewModel? reader)
+    {
+        reader ??= SelectedReader;
+        if (reader is null || !reader.IsModbus) return;
+        var existing = _settings.Modbus.Readers.FirstOrDefault(r => string.Equals(r.EffectiveName, reader.Name, StringComparison.OrdinalIgnoreCase));
+        if (existing is null) return;
+        if (ConfirmDelete is not null && !ConfirmDelete(reader.DisplayName)) return;
+        _settings.Modbus.Readers.Remove(existing);
+        SaveModbusReaders();
+        StatusMessage = $"Modbus 리더 삭제: {reader.DisplayName}";
+    }
+
+    /// <summary>
+    /// 등록/편집 대화상자. isNew 면 새 항목으로 추가하고, 아니면 같은 이름의 항목을 교체한다.
+    /// 확인 즉시 저장·적용되며, 이름이 바뀐 리더는 목록에서 새 리더로 나타난다.
+    /// </summary>
+    private void OpenModbusEditor(ModbusReaderSettings initial, bool isNew)
+    {
+        if (ShowModbusEditor is null) { StatusMessage = "등록 대화상자를 열 수 없습니다."; return; }
+        var taken = _provider.Readers
+            .Concat(_settings.Modbus.Readers.Select(r => r.EffectiveName))
+            .Where(n => isNew || !string.Equals(n, initial.EffectiveName, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var editor = new ModbusReaderEditorViewModel(isNew ? initial.Clone() : initial.Clone(), isNew, taken, _settings.Modbus.TimeoutMs, _ui);
+        if (!ShowModbusEditor(editor)) return;
+
+        var result = editor.ToSettings();
+        if (isNew)
+        {
+            _settings.Modbus.Readers.Add(result);
+        }
+        else
+        {
+            var idx = _settings.Modbus.Readers.FindIndex(r => string.Equals(r.EffectiveName, editor.OriginalName, StringComparison.OrdinalIgnoreCase));
+            if (idx >= 0) _settings.Modbus.Readers[idx] = result; else _settings.Modbus.Readers.Add(result);
+        }
+        if (!ModbusEnabled) ModbusEnabled = true; // 리더를 등록했으면 입력을 켠 것으로 본다
+        _settings.Modbus.Enabled = true;
+        SaveModbusReaders();
+        StatusMessage = (isNew ? "Modbus 리더 추가: " : "Modbus 리더 편집: ") + result.EffectiveName
+                        + (result.Enabled ? "" : " (사용 안 함)");
+        // 새로 뜬 리더를 바로 선택
+        _ui.BeginInvoke(() =>
+        {
+            var vm = Readers.FirstOrDefault(r => string.Equals(r.Name, result.EffectiveName, StringComparison.OrdinalIgnoreCase));
+            if (vm is not null) SelectedReader = vm;
+        }, DispatcherPriority.Background);
+    }
+
+    private void SaveModbusReaders()
+    {
+        SettingsStore.Save(_settings);
+        _modbus.Configure(_settings.Modbus);
+        RefreshModbusStatusText();
+        LastSavedText = $"저장됨 {DateTime.Now:HH:mm:ss} · Modbus 리더";
+    }
+
+    private void RefreshModbusStatusText()
+    {
+        var all = _settings.Modbus.Readers;
+        var active = all.Count(r => r.Enabled);
+        if (all.Count == 0) { ModbusStatusText = "등록된 리더 없음. 왼쪽 리더 목록의 '＋ 리더 추가'로 넣습니다."; return; }
+        if (!_settings.Modbus.Enabled) { ModbusStatusText = $"꺼짐 · 등록 {all.Count}대"; return; }
+        var connected = _modbus.Readers.Count(n => _modbus.Diagnostics(n)?.Connected == true);
+        ModbusStatusText = $"등록 {all.Count}대, 사용 {active}대, 연결 {connected}대";
+    }
+
     // ------------------------------------------------------------ 명령: 인식률 시험
 
     [RelayCommand]
@@ -944,5 +1146,6 @@ public sealed partial class MainViewModel : ObservableObject
         _settings.TestDurationSec = TestDurationSec;
         _settings.TestIntervalMs = TestIntervalMs;
         SettingsStore.Save(_settings);
+        DevTools.Dispose();
     }
 }

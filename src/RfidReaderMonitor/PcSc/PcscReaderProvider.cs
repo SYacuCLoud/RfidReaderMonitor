@@ -34,6 +34,7 @@ public sealed class PcscReaderProvider : IRfidReaderProvider
     public void Start() => _monitor.Start();
     public void Stop() => _monitor.Stop();
     public void Refresh() => _monitor.Refresh();
+    public ReaderKind KindOf(string readerName) => ReaderKind.PcSc;
 
     public ReaderIdentity Identify(string readerName)
     {

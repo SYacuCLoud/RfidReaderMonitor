@@ -34,6 +34,25 @@ public static class PresenceStateText
     };
 }
 
+/// <summary>리더가 어떤 경로로 붙어 있는지. 화면이 종류별로 다른 정보를 보여 주는 기준.</summary>
+public enum ReaderKind
+{
+    /// <summary>Windows PC/SC(WinSCard) 리더. 대개 USB CCID.</summary>
+    PcSc,
+    /// <summary>Modbus TCP 로 폴링하는 산업용 리더/IO-Link 마스터.</summary>
+    Modbus
+}
+
+public static class ReaderKindText
+{
+    public static string Ko(this ReaderKind k) => k switch
+    {
+        ReaderKind.PcSc => "USB PC/SC",
+        ReaderKind.Modbus => "Modbus TCP",
+        _ => "?"
+    };
+}
+
 public sealed record ReaderIdentity(
     string? Vendor,
     string? IfdType,
@@ -50,6 +69,8 @@ public sealed class ReaderPresenceEventArgs : EventArgs
     public required byte[] Atr { get; init; }
     public required uint RawFlags { get; init; }
     public required DateTimeOffset Time { get; init; }
+    /// <summary>원신호 표에 보일 원값 글자. null 이면 ATR hex 를 쓴다 (PC/SC). Modbus 는 레지스터 값.</summary>
+    public string? RawText { get; init; }
 }
 
 public sealed class ReaderListChangedEventArgs : EventArgs
@@ -77,6 +98,12 @@ public interface IRfidReaderProvider : IDisposable
 
     void Start();
     void Stop();
+
+    /// <summary>리더 목록 재조회 또는 재접속을 강제한다.</summary>
+    void Refresh();
+
+    /// <summary>리더의 연결 종류. 목록에 없는 이름이면 예외.</summary>
+    ReaderKind KindOf(string readerName);
 
     /// <summary>제조사, 모델, 펌웨어 버전, S/N 등. 카드 유무 무관.</summary>
     ReaderIdentity Identify(string readerName);

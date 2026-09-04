@@ -137,6 +137,9 @@ public sealed class PresenceTracker : IDisposable
     {
         var s = Get(e.ReaderName);
         var atrHex = Hex.Of(e.Atr);
+        // 원신호 표의 "원값" 칸. PC/SC 는 ATR, Modbus 는 프로바이더가 준 레지스터 값.
+        var rawText = e.RawText ?? atrHex;
+        var emptyText = e.RawText ?? string.Empty;
 
         switch (e.State)
         {
@@ -144,7 +147,7 @@ public sealed class PresenceTracker : IDisposable
             case PresenceState.InUse:
             case PresenceState.Mute:
                 s.RawPresent = true;
-                OnRawPresent(e, s, atrHex);
+                OnRawPresent(e, s, atrHex, rawText);
                 break;
 
             case PresenceState.Empty:
@@ -155,27 +158,27 @@ public sealed class PresenceTracker : IDisposable
                 if (s.Identifying)
                 {
                     CancelIdentify(s);
-                    Raw?.Invoke(new RawSignal(e.Time, e.ReaderName, e.State.Ko(), string.Empty, "UID 확인 전에 사라짐, 등장 미확정"));
+                    Raw?.Invoke(new RawSignal(e.Time, e.ReaderName, e.State.Ko(), emptyText,"UID 확인 전에 사라짐, 등장 미확정"));
                 }
                 else
                 {
-                    Raw?.Invoke(new RawSignal(e.Time, e.ReaderName, e.State.Ko(), string.Empty, s.CurrentUid is null ? "" : $"T_off {RemovalDebounceMs}ms 대기"));
+                    Raw?.Invoke(new RawSignal(e.Time, e.ReaderName, e.State.Ko(), emptyText,s.CurrentUid is null ? "" : $"T_off {RemovalDebounceMs}ms 대기"));
                 }
                 StartRemovalTimer(e.ReaderName, s);
                 break;
 
             case PresenceState.Removed:
-                Raw?.Invoke(new RawSignal(e.Time, e.ReaderName, e.State.Ko(), string.Empty, ""));
+                Raw?.Invoke(new RawSignal(e.Time, e.ReaderName, e.State.Ko(), emptyText,""));
                 HandleReset(new ResetItem(e.ReaderName, e.Time, e.State.Ko()));
                 break;
 
             default:
-                Raw?.Invoke(new RawSignal(e.Time, e.ReaderName, e.State.Ko(), atrHex, $"flags=0x{e.RawFlags:X}"));
+                Raw?.Invoke(new RawSignal(e.Time, e.ReaderName, e.State.Ko(), rawText, $"flags=0x{e.RawFlags:X}"));
                 break;
         }
     }
 
-    private void OnRawPresent(ReaderPresenceEventArgs e, ReaderState s, string atrHex)
+    private void OnRawPresent(ReaderPresenceEventArgs e, ReaderState s, string atrHex, string rawText)
     {
         var tech = AtrParser.Parse(e.Atr);
         bool wasPendingRemoval = s.RemovalTimer is not null;
@@ -184,7 +187,7 @@ public sealed class PresenceTracker : IDisposable
         if (s.Identifying)
         {
             // 재시도 타이머가 이미 UID 를 읽고 있다. 여기서 또 읽으면 접속 → 상태변경 → 재진입 되먹임이 생긴다.
-            Raw?.Invoke(new RawSignal(e.Time, e.ReaderName, e.State.Ko(), atrHex, "UID 확인 대기 중"));
+            Raw?.Invoke(new RawSignal(e.Time, e.ReaderName, e.State.Ko(), rawText, "UID 확인 대기 중"));
             return;
         }
 
@@ -203,7 +206,7 @@ public sealed class PresenceTracker : IDisposable
         if (read is not null && read.Tech.Family != CardFamily.Unknown) tech = read.Tech;
         var uid = read is null ? null : UidFormatter.Format(read.Uid, tech.Family, ReverseIso15693);
 
-        Raw?.Invoke(new RawSignal(e.Time, e.ReaderName, e.State.Ko(), atrHex, uid ?? note));
+        Raw?.Invoke(new RawSignal(e.Time, e.ReaderName, e.State.Ko(), rawText, uid ?? note));
 
         if (uid is null)
         {

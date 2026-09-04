@@ -20,6 +20,7 @@ A Windows desktop tool for PC/SC RFID readers: lists readers, maps each reader's
 | 하드웨어 S/N | `SCARD_ATTR_VENDOR_IFD_SERIAL_NO` → 없으면 레지스트리 `ParentIdPrefix`로 USB 부모 장치의 시리얼 → 없으면 USB 포트 경로 |
 | 별명 | S/N을 키로 저장. 리더를 다른 USB 포트에 꽂아도 별명 유지. 입력 즉시 자동 저장 |
 | 원신호 | `SCardGetStatusChange` 기반 PRESENT/EMPTY. 사용중(EXCLUSIVE)·무응답(MUTE)·사용불가 구분 |
+| 산업용 리더 입력 | Modbus TCP 를 여는 장치(Turck TBEN, Balluff BIS V, IO-Link 마스터 등)의 Tag Present 비트와 UID 레지스터를 폴링. 리더 목록의 "＋ 리더 추가"(또는 우클릭 편집·삭제)로 등록 대화상자를 열어 레지스터 맵(영역·주소·비트·바이트 순서)을 입력하고, 같은 창의 **연결 테스트**로 저장 전에 원값을 보며 맞춤. 프리셋 제공. PC/SC 리더와 같은 화면·이벤트·출력으로 합쳐짐 |
 | UID 읽기 | PC/SC GET DATA (`FF CA 00 00 00`). ATR로 카드 규격(ISO 14443A/B, ISO 15693, FeliCa …) 판별, ISO 15693 UID 역순 표시 옵션 |
 | 디바운스 | UID를 확인해야 등장 확정(최대 1.5 s 재시도). EMPTY가 T_off 이상 지속되어야 제거 확정. T_off 안의 재등장은 무시. 제거 이벤트에 체류 시간 포함 |
 | 라이브 배너·대시보드 | 최근 이벤트를 큰 글씨와 애니메이션으로 표시. 리더 수, 감지 중 리더, 오늘 등장/제거, 평균 체류, 출력 상태 타일 |
@@ -28,9 +29,11 @@ A Windows desktop tool for PC/SC RFID readers: lists readers, maps each reader's
 | 하트비트 | 주기(기본 60초)와 리더 상태 변화 시 PC 이름, 버전, 리더별 상태·UID, 오늘 건수를 상태 메시지로 보냄 |
 | 수집 모드 | `--collector [포트]` 로 띄우면 여러 감시 PC의 하트비트·이벤트를 받아 PC별 타일과 통합 이벤트 목록으로 표시. 통합 CSV 기록 |
 | 인식률 시험 | 지정 시간 반복 읽기 → 성공률, 최대 끊김, 응답 시간. 읽기 거리·설치 위치 조정용 |
-| 제조사 도구 | 선택한 리더의 제조사에 맞는 도구만 표시. 현재 ACS: 펌웨어/S/N 조회, LED, 부저, 자동 폴링 설정, PICC 파라미터, 직접 hex 에스케이프 명령 |
+| 리더 도구 | 선택한 리더의 종류·제조사에 맞는 도구만 표시. ACS(PC/SC): 펌웨어/S/N 조회, LED, 부저, 자동 폴링 설정, PICC 파라미터, 직접 hex 에스케이프 명령. Modbus TCP: Present 레지스터 원값·비트열, UID 워드와 해석 결과를 0.3초마다 갱신, 바이트 순서 힌트, 재접속 |
+| 리더 종류 구분 | 목록의 "연결" 열(USB PC/SC / Modbus TCP 주소)과 리더 상세의 식별 정보가 종류별로 다르게 표시. PC/SC 전용 설정(부저, 스마트카드 PnP, SCardSvr)은 PC/SC 리더가 없으면 접힘 |
 | Windows 점검 | 스마트카드 PnP 정책 적용·원복, SCardSvr 상태, ACS 드라이버 EscapeCommandEnable 설정 (UAC 승격 버튼) |
 | 상주 | 트레이 최소화, 단일 인스턴스, 로그인 자동 시작, `--minimized` 인자 |
+| 개발자 모드 | `Ctrl+Shift+D` 또는 `--dev` 로 숨은 "개발자" 탭 표시. Modbus TCP RFID 리더 시뮬레이터(포트·레지스터 맵·태그 놓기/빼기·자동 반복)로 산업용 리더 없이 입력 경로를 시험 |
 | 업데이트 | "업데이트 확인" 버튼으로 GitHub 최신 릴리스 비교 → sha256 검증 → 교체·재시작. 수동 전용 |
 
 ## 요구 사항
@@ -187,19 +190,24 @@ UID 를 모르는 신호(읽기 실패·사용중·무응답)는 이미 확정�
 src/RfidReaderMonitor/
   Native/      winscard.dll P/Invoke
   PcSc/        컨텍스트·카드 래퍼, 감시 스레드(PcscMonitor), IRfidReaderProvider 구현
-  Readers/     리더 추상화 인터페이스 (다른 하드웨어로 교체하는 지점)
+  Readers/     리더 추상화 인터페이스, 여러 프로바이더를 합치는 CompositeReaderProvider
+  Modbus/      최소 Modbus TCP 클라이언트(FC 01~04), 산업용 리더 폴링 프로바이더(ModbusReaderProvider), 개발자 모드용 리더 시뮬레이터
   Core/        ATR 해석, UID 포맷, 디바운스 추적기(PresenceTracker), 인식률 시험
   Acs/         ACS 에스케이프 명령 정의
   Sys/         WMI·레지스트리 장치 매핑, Windows 점검, UAC 승격 실행
   Output/      이벤트 싱크(CSV/TCP/Pipe/SQL)와 디스패처
   Settings/    settings.json
   ViewModels/  MVVM (CommunityToolkit.Mvvm)
-  Views/       MainWindow, AcsToolsView
+  Views/       MainWindow, AcsToolsView, ModbusToolsView(리더 도구), ModbusReaderDialog(리더 등록), DevToolsView(개발자 탭)
 ```
 
-### 다른 제조사 도구 추가
+### 다른 리더 도구 추가
 
-`ViewModels/AcsToolsViewModel.cs` + `Views/AcsToolsView.xaml` 짝을 참고해 같은 모양으로 만들고, `MainViewModel.UpdateVendorTools()`에서 `Vendor` 값에 따라 분기를 하나 추가하면 제조사 도구 탭에 나타납니다. 표준 PC/SC 기능은 수정 없이 그대로 동작합니다.
+`ViewModels/AcsToolsViewModel.cs` + `Views/AcsToolsView.xaml`(PC/SC 제조사 도구) 또는 `ModbusToolsViewModel` + `ModbusToolsView`(연결 종류별 도구) 짝을 참고해 같은 모양으로 만들고, `MainViewModel.UpdateVendorTools()`에서 `Kind` 또는 `Vendor` 값에 따라 분기를 하나 추가하면 리더 도구 탭에 나타납니다. 표준 기능은 수정 없이 그대로 동작합니다.
+
+### 다른 입력 경로 추가
+
+`Readers/Models.cs`의 `IRfidReaderProvider`를 구현하고(`ReaderKind`에 종류 추가), `App.xaml.cs`의 `CompositeReaderProvider` 목록에 넣으면 됩니다. `PresenceChanged`에 PRESENT/EMPTY 만 올려 주면 디바운스·UID 확인·출력은 공용 파이프라인이 처리합니다. `Modbus/ModbusReaderProvider.cs`가 예시입니다.
 
 ## 알려진 제약
 

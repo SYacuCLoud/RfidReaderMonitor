@@ -3,8 +3,10 @@ using System.Windows;
 using System.Windows.Controls;
 using Hardcodet.Wpf.TaskbarNotification;
 using RfidReaderMonitor.Core;
+using RfidReaderMonitor.Modbus;
 using RfidReaderMonitor.Output;
 using RfidReaderMonitor.PcSc;
+using RfidReaderMonitor.Readers;
 using RfidReaderMonitor.Settings;
 using RfidReaderMonitor.ViewModels;
 using RfidReaderMonitor.Views;
@@ -20,7 +22,8 @@ public partial class App : Application
 
     private Mutex? _mutex;
     private EventWaitHandle? _showEvent;
-    private PcscReaderProvider? _provider;
+    private CompositeReaderProvider? _provider;
+    private ModbusReaderProvider? _modbus;
     private PresenceTracker? _tracker;
     private EventDispatcher? _dispatcher;
     private MainViewModel? _vm;
@@ -74,7 +77,10 @@ public partial class App : Application
             return;
         }
 
-        _provider = new PcscReaderProvider();
+        // 입력: PC/SC 데스크톱 리더 + Modbus TCP 산업용 리더를 하나로 합친다.
+        _modbus = new ModbusReaderProvider();
+        _modbus.Configure(settings.Modbus);
+        _provider = new CompositeReaderProvider(("PC/SC", new PcscReaderProvider()), ("Modbus", _modbus));
         var provider = _provider;
         _tracker = new PresenceTracker(name =>
         {
@@ -84,7 +90,8 @@ public partial class App : Application
         _dispatcher = new EventDispatcher();
         var rawLogger = new RawSignalLogger(Path.Combine(settings.EffectiveLogFolder, "raw"));
 
-        _vm = new MainViewModel(settings, _provider, _tracker, _dispatcher, rawLogger, Dispatcher);
+        _vm = new MainViewModel(settings, _provider, _modbus, _tracker, _dispatcher, rawLogger, Dispatcher);
+        if (e.Args.Any(a => a.Equals("--dev", StringComparison.OrdinalIgnoreCase))) _vm.DeveloperMode = true;
         _window = new MainWindow(_vm);
         MainWindow = _window;
 

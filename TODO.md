@@ -19,8 +19,11 @@
 - [ ] **다중 리더 배너** 리더 3대 이상일 때 리더별 타일 격자. 등장 시 해당 타일만 번쩍임.
 - [ ] **UID → 대상물 이름 매핑** UID 화이트리스트와 표시 이름. 배너·이벤트·CSV에 함께 출력. 매핑 파일(CSV/JSON) 핫리로드.
 - [ ] **순차 매핑 이벤트** 문서의 "제거 후 제한시간 안 등장 → 연결" 규칙. 상위 시스템에서 처리하는 것을 기본으로 두고, 옵션으로만 제공할지 결정.
-- [ ] **시뮬레이터 프로바이더** `IRfidReaderProvider` 구현으로 가짜 리더·태그 이벤트 생성. 리더 없이 상위 시스템 개발·UI 시연용. 스크린샷 촬영에도 사용.
-- [ ] **IO-Link 헤드 프로바이더** 산업용 헤드(Balluff/Turck/Siemens/P+F) Tag Present 비트 기반 구현. 마스터 웹서버/Modbus TCP 등 접근 방식 조사부터.
+- [ ] **시뮬레이터 프로바이더** `IRfidReaderProvider` 구현으로 가짜 리더·태그 이벤트 생성. 리더 없이 상위 시스템 개발·UI 시연용. 스크린샷 촬영에도 사용. (Modbus 경로는 개발자 탭의 Modbus TCP 리더 시뮬레이터로 이미 가능. PC/SC 경로용은 미구현)
+- [x] **Modbus TCP 리더 프로바이더** 산업용 헤드(Turck TBEN, Balluff BIS V, IO-Link 마스터)의 Tag Present 비트·UID 레지스터를 폴링하는 `ModbusReaderProvider`. 설정 탭에서 리더별 레지스터 맵 편집. PC/SC 와 `CompositeReaderProvider` 로 합쳐 동시 감시. 실물 장치의 레지스터 맵 확인은 아직.
+- [ ] **OPC UA 클라이언트 프로바이더** OPC UA AutoID Companion Spec(또는 벤더 노드) 구독으로 Present·UID 수신. Sick RFU6xx, Turck, Balluff 상위 모델. 클라이언트 스택은 MIT 인 Workstation.UaClient 우선 검토(OPC Foundation 공식 스택은 비회원 GPL 2.0).
+- [ ] **Modbus TCP 서버 싱크 (방향 2: PLC 가 이 PC 를 읽어감)** 502 포트를 열고 리더별 Tag Present 비트, UID 레지스터, 마지막 이벤트 시각을 레지스터 맵으로 유지. `IEventSink` 로 추가.
+- [ ] **OPC UA 서버 싱크 (방향 2)** 리더마다 노드를 만들고 값 변경 시 갱신. AutoID Companion Spec 노드셋 탑재 여부와 스택 라이선스(GPL/상용) 결정 필요.
 - [ ] **다국어 UI** XAML 문자열을 리소스로 분리한 뒤 영어 추가.
 - [ ] **코드 서명** SmartScreen 경고 제거. 인증서 확보 후 CI 서명 단계 추가. 업데이터가 내려받은 exe 실행에도 도움.
 - [x] **수동 업데이트** "업데이트 확인" 버튼 → GitHub Releases 비교 → sha256 검증 → 교체·재시작. (v0.2)
@@ -32,3 +35,4 @@
 - [ ] ACR1552U PICC 파라미터의 ISO 15693 비트 위치 (현재 0x20 추정). 제조사 도구 탭 "직접 명령"으로 `E0 00 00 20 00` 응답 확인.
 - [ ] ACR1552U LED 비트 배치 (현재 0x0F 전체 ON으로만 시험). 색상별 비트 확인 후 UI에 색 선택 추가.
 - [ ] ISO 15693 UID 바이트 순서. 리더가 E0 로 시작하는 순서로 주는지, 역순인지 실물로 확인 후 기본값 결정.
+- [ ] Modbus TCP 리더 실물 레지스터 맵. Turck TBEN-S2-2RFID 또는 Balluff BIS V 문서로 Present 비트 위치, UID 레지스터 시작 주소, 워드 안 바이트 순서 확인. Modbus 시뮬레이터(예: ModbusPal, diagslave)로 프로바이더 동작 먼저 검증.
