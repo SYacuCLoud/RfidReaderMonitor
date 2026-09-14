@@ -39,6 +39,9 @@ jobs:
       - name: Build
         run: dotnet build src/RfidReaderMonitor/RfidReaderMonitor.csproj -c Release --no-restore -p:Version=${{ steps.ver.outputs.version }}
 
+      - name: Test (MQTT payload schemas etc.)
+        run: dotnet test tests/RfidReaderMonitor.Tests/RfidReaderMonitor.Tests.csproj -c Release --nologo
+
       - name: Publish single-file exe
         run: >
           dotnet publish src/RfidReaderMonitor/RfidReaderMonitor.csproj -c Release -r win-x64 --self-contained

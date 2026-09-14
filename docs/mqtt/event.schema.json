@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SYacuCLoud/RfidReaderMonitor/main/docs/mqtt/event.schema.json",
+  "title": "RfidReaderMonitor tag event",
+  "description": "확정된 등장 · 제거 이벤트 한 건. MQTT 토픽 {prefix}/{site}/reader/{key}/event (QoS 1, retained 아님)과 TCP 서버 · 명명된 파이프 · 수집 PC 전송의 JSON 줄이 같은 형식이다.",
+  "type": "object",
+  "required": ["v", "type", "time", "kind", "reader", "readerName", "serial", "uid", "host"],
+  "properties": {
+    "v": { "const": 1 },
+    "type": { "const": "event" },
+    "time": { "$ref": "state.schema.json#/$defs/time", "description": "이벤트가 확정된 시각(감시 PC 시계)." },
+    "kind": { "enum": ["APPEAR", "REMOVE"], "description": "APPEAR = 등장(UID 확인 뒤 확정), REMOVE = 제거(T_off 이상 EMPTY 유지)." },
+    "reader": { "type": "string", "description": "사람이 부르는 이름. 별명이 있으면 별명." },
+    "alias": { "type": "string" },
+    "readerName": { "type": "string" },
+    "serial": { "type": "string", "description": "리더 S/N. 없으면 빈 문자열." },
+    "uid": { "type": "string", "description": "태그 UID(16진). 등장 확정 안에 못 읽었으면 '?' 일 수 있다." },
+    "tech": { "type": "string" },
+    "atr": { "type": "string", "description": "PC/SC ATR(16진). Modbus 리더는 빈 문자열." },
+    "dwellMs": { "type": "integer", "minimum": 0, "description": "REMOVE 에만. 등장부터 제거까지 체류 시간(ms). APPEAR 에는 필드가 없다." },
+    "host": { "type": "string", "description": "이벤트를 만든 감시 PC 이름." }
+  },
+  "additionalProperties": true,
+  "examples": [
+    {
+      "v": 1,
+      "type": "event",
+      "time": "2026-09-14T15:32:40.000+09:00",
+      "kind": "REMOVE",
+      "reader": "1번 저울",
+      "alias": "1번 저울",
+      "readerName": "ACS ACR1552 1S CL Reader PICC 0",
+      "serial": "RR657-005592",
+      "uid": "E0040150ABCDEF01",
+      "tech": "ISO 15693",
+      "atr": "3B8F8001804F0CA000000306030001000000006A",
+      "dwellMs": 7069,
+      "host": "PC-LINE1"
+    }
+  ]
+}

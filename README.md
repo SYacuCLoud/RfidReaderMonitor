@@ -24,8 +24,8 @@ A Windows desktop tool for PC/SC RFID readers: lists readers, maps each reader's
 | UID 읽기 | PC/SC GET DATA (`FF CA 00 00 00`). ATR로 카드 규격(ISO 14443A/B, ISO 15693, FeliCa …) 판별, ISO 15693 UID 역순 표시 옵션 |
 | 디바운스 | UID를 확인해야 등장 확정(최대 1.5 s 재시도). EMPTY가 T_off 이상 지속되어야 제거 확정. T_off 안의 재등장은 무시. 제거 이벤트에 체류 시간 포함 |
 | 라이브 배너·대시보드 | 최근 이벤트를 큰 글씨와 애니메이션으로 표시. 리더 수, 감지 중 리더, 오늘 등장/제거, 평균 체류, 출력 상태 타일 |
-| 이벤트 출력 | CSV(일별 파일), TCP 서버(JSON 줄 단위 방송), 명명된 파이프(JSON 줄), **TCP 클라이언트(수집 서버로 전송)**, SQL Server(이벤트·호스트 상태 테이블 자동 생성) |
-| 재전송 큐 | TCP 클라이언트와 SQL Server 출력은 로컬 파일 큐를 거친다. 서버·네트워크가 끊겨도 이벤트가 사라지지 않고 복구 후 순서대로 재전송 |
+| 이벤트 출력 | CSV(일별 파일), TCP 서버(JSON 줄 단위 방송), 명명된 파이프(JSON 줄), **TCP 클라이언트(수집 서버로 전송)**, SQL Server(이벤트·호스트 상태 테이블 자동 생성), **MQTT 브로커 발행**(리더별 현재 상태 retained · 등장/제거 이벤트 · PC online/offline LWT — 실시간 현황판용) |
+| 재전송 큐 | TCP 클라이언트 · SQL Server · MQTT 이벤트 출력은 로컬 파일 큐를 거친다. 서버·네트워크가 끊겨도 이벤트가 사라지지 않고 복구 후 순서대로 재전송 |
 | 하트비트 | 주기(기본 60초)와 리더 상태 변화 시 PC 이름, 버전, 리더별 상태·UID, 오늘 건수를 상태 메시지로 보냄 |
 | 수집 모드 | `--collector [포트]` 로 띄우면 여러 감시 PC의 하트비트·이벤트를 받아 PC별 타일과 통합 이벤트 목록으로 표시. 통합 CSV 기록 |
 | 인식률 시험 | 지정 시간 반복 읽기 → 성공률, 최대 끊김, 응답 시간. 읽기 거리·설치 위치 조정용 |
@@ -139,6 +139,22 @@ time,kind,alias,readerName,serial,uid,tech,atr,dwellMs,host
 장기 보관과 집계는 SQL Server 출력을 함께 켜서 하십시오. 하트비트는 SQL 쪽에서 `...Hosts` 테이블(이벤트 테이블 이름의 `Events` 를 `Hosts` 로 바꾼 이름)에 PC별 한 행으로 갱신됩니다.
 
 `kind`는 `등장`/`제거`, `alias`는 비어 있을 수 있습니다. 원신호(디바운스 전)는 `logs\raw\raw-YYYYMMDD.csv`에 별도로 남으며 열은 `time,alias,readerName,state,raw,note` 입니다. `raw`는 PC/SC 리더면 ATR, Modbus 리더면 레지스터 값입니다.
+
+### MQTT 브로커 발행
+
+실시간 현황판(예: Grid Tile Editor 의 도면 위 오버레이)이 구독하는 출력입니다. 설정 → 이벤트 출력 → **MQTT 브로커로 발행** 에 브로커 주소 · 포트 · 사업장 이름을 넣고 **발행 시작** 을 누릅니다. 사내망 Mosquitto 처럼 인증이 없는 브로커는 사용자 · 비밀번호를 비워 둡니다.
+
+페이로드 형식은 **v1** 이며 JSON Schema 와 함께 [docs/mqtt/](./docs/mqtt/README.md) 에 고정해 두었습니다. 모든 메시지에 `v` 가 실리고, 소비자는 모르는 필드를 무시합니다.
+
+| 토픽 | retained | 내용 |
+|---|---|---|
+| `rfid/{사업장}/reader/{리더S/N}/state` | 예 | 리더의 지금 상태. `{"v":1,"type":"state","time","host","reader","alias","readerName","serial","present","online","uid","tech","state"}`. 바뀔 때만 다시 냅니다. 화면이 늦게 켜져도 접속 즉시 모든 리더의 마지막 값을 받습니다 |
+| `rfid/{사업장}/reader/{리더S/N}/event` | 아니오 (QoS 1) | 등장 · 제거 이벤트. TCP · SQL 과 같은 JSON(`type":"event"`, `kind` APPEAR/REMOVE, `dwellMs` …). 로컬 큐를 거쳐 브로커가 꺼져 있어도 뒤에 순서대로 나갑니다 |
+| `rfid/{사업장}/host/{PC이름}/status` | 예 + LWT | 하트비트마다 `online:true` 와 리더 수 · 오늘 건수. 이 PC 가 끊기면 브로커가 `online:false` 를 대신 냅니다 |
+
+리더 S/N 이 없는 리더는 별명 → 이름 순으로 토픽에 씁니다. 토픽 마디에 못 쓰는 문자(`/` `+` `#` 공백)는 `_` 로 바뀝니다. 첫 마디 `rfid` 는 `settings.json` 의 `MqttSink.Prefix` 로 바꿀 수 있습니다.
+
+MQTT 는 "지금" 만 전합니다. 이력 · 집계는 SQL Server 출력을 함께 켜서 하십시오.
 
 ### SQL Server
 

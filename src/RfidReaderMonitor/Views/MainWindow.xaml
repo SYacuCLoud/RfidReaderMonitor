@@ -651,7 +651,7 @@
                                             <ColumnDefinition Width="*"/>
                                         </Grid.ColumnDefinitions>
                                         <Grid.RowDefinitions>
-                                            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                            <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                                         </Grid.RowDefinitions>
                                         <TextBlock Text="로그 폴더" Style="{StaticResource Label}"/>
                                         <TextBox Grid.Column="1" Text="{Binding LogFolder}" Margin="0,2"/>
@@ -668,10 +668,33 @@
                                             <TextBlock Text="{Binding TcpClientStatusText}" Foreground="{Binding TcpClientStatusColor}" Style="{StaticResource Label}" VerticalAlignment="Center"/>
                                         </StackPanel>
 
-                                        <TextBlock Grid.Row="7" Text="상태 메시지(하트비트) 주기(초)" Style="{StaticResource Label}"/>
+                                        <TextBlock Grid.Row="7" Text="MQTT 브로커로 발행" Style="{StaticResource Label}"
+                                                   ToolTip="실시간 현황판이 구독하는 출력입니다. 리더별 현재 상태는 retained 로(늦게 켠 화면도 즉시 채워짐), 등장·제거 이벤트는 QoS 1 로 발행하고, 이 PC 가 끊기면 브로커가 offline 을 대신 알립니다. 이벤트는 로컬 큐를 거쳐 브로커가 꺼져 있어도 뒤에 순서대로 나갑니다."/>
                                         <StackPanel Grid.Row="7" Grid.Column="1" Orientation="Horizontal">
+                                            <TextBlock Text="주소" Style="{StaticResource Label}"/>
+                                            <TextBox Text="{Binding MqttSinkHost}" Width="160" Margin="0,2,12,2"/>
+                                            <TextBlock Text="포트" Style="{StaticResource Label}"/>
+                                            <TextBox Text="{Binding MqttSinkPort}" Width="60" Margin="0,2,12,2"/>
+                                            <TextBlock Text="사업장" Style="{StaticResource Label}" ToolTip="토픽 둘째 마디. rfid/{사업장}/reader/{S/N}/state"/>
+                                            <TextBox Text="{Binding MqttSinkSite}" Width="100" Margin="0,2,12,2"/>
+                                            <Button Content="{Binding MqttSinkButtonText}" Command="{Binding ToggleMqttSinkCommand}" MinWidth="90" Margin="0,2,12,2"
+                                                    ToolTip="누르면 바로 저장되고 적용됩니다. 켜진 뒤에는 끊겨도 자동으로 재접속합니다."/>
+                                            <TextBlock Text="{Binding MqttSinkStatusText}" Foreground="{Binding MqttSinkStatusColor}" Style="{StaticResource Label}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="8" Text="   인증 (선택)" Style="{StaticResource Label}"/>
+                                        <StackPanel Grid.Row="8" Grid.Column="1" Orientation="Horizontal">
+                                            <TextBlock Text="사용자" Style="{StaticResource Label}"/>
+                                            <TextBox Text="{Binding MqttSinkUsername}" Width="120" Margin="0,2,12,2"/>
+                                            <TextBlock Text="비밀번호" Style="{StaticResource Label}"/>
+                                            <TextBox Text="{Binding MqttSinkPassword}" Width="120" Margin="0,2,12,2" FontFamily="Consolas"/>
+                                            <CheckBox Content="TLS" IsChecked="{Binding MqttSinkUseTls}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                            <TextBlock Text="사내망 브로커는 비워 둡니다. 비밀번호는 DPAPI 로 보호되어 저장됩니다." Style="{StaticResource Label}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+
+                                        <TextBlock Grid.Row="9" Text="상태 메시지(하트비트) 주기(초)" Style="{StaticResource Label}"/>
+                                        <StackPanel Grid.Row="9" Grid.Column="1" Orientation="Horizontal">
                                             <TextBox Text="{Binding HeartbeatSec}" Width="70"/>
-                                            <TextBlock Text="  0이면 끔. 리더 상태 변화 시에도 즉시 1회 전송. 수집 모드와 SQL 호스트 테이블이 소비" Style="{StaticResource Label}"/>
+                                            <TextBlock Text="  0이면 끔. 리더 상태 변화 시에도 즉시 1회 전송. 수집 모드 · SQL 호스트 테이블 · MQTT 상태 토픽이 소비" Style="{StaticResource Label}"/>
                                         </StackPanel>
 
                                         <CheckBox Grid.Row="1" Content="CSV 파일 (events-날짜.csv)" IsChecked="{Binding CsvEnabled}"/>

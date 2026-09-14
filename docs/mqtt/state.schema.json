@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SYacuCLoud/RfidReaderMonitor/main/docs/mqtt/state.schema.json",
+  "title": "RfidReaderMonitor reader state",
+  "description": "리더 한 대의 지금 상태. 토픽 {prefix}/{site}/reader/{key}/state 에 retained 로 발행되고 바뀔 때만 다시 나간다. 빈 페이로드는 '지웠다'는 뜻이다.",
+  "type": "object",
+  "required": ["v", "type", "time", "host", "reader", "serial", "present", "online", "uid", "state"],
+  "properties": {
+    "v": { "const": 1, "description": "형식 판. 필드를 지우거나 뜻을 바꾸면 올린다." },
+    "type": { "const": "state" },
+    "time": { "$ref": "#/$defs/time", "description": "상태가 바뀐 시각." },
+    "host": { "type": "string", "description": "이 상태를 낸 감시 PC 이름." },
+    "reader": { "type": "string", "description": "사람이 부르는 이름. 별명이 있으면 별명, 없으면 리더 이름." },
+    "alias": { "type": "string", "description": "사용자가 붙인 별명. 없으면 빈 문자열." },
+    "readerName": { "type": "string", "description": "PC/SC 이름 또는 Modbus/MQTT 리더 이름." },
+    "serial": { "type": "string", "description": "리더 하드웨어 S/N. 없으면 빈 문자열. Grid Tile Editor 장치 대장의 S/N 과 같은 값." },
+    "present": { "type": "boolean", "description": "태그가 필드에 있는가(디바운스 뒤 확정값)." },
+    "online": { "type": "boolean", "description": "리더가 살아 있는가. 뽑힘 · 사용불가 · 감시 PC 종료면 false." },
+    "uid": { "type": "string", "description": "present 일 때 태그 UID(16진, 공백 없음). 아니면 빈 문자열." },
+    "tech": { "type": "string", "description": "태그 규격 표시. 예: ISO 15693. 모르면 빈 문자열." },
+    "state": { "type": "string", "description": "원신호 상태 글자. PRESENT · PRESENT (사용중) · PRESENT (무응답) · EMPTY · 사용불가 · 뽑힘 · ?" }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "time": {
+      "type": "string",
+      "description": "ISO 8601, 밀리초와 시간대 오프셋 포함. 예: 2026-09-14T15:32:32.931+09:00",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?([+-]\\d{2}:\\d{2}|Z)$"
+    }
+  },
+  "examples": [
+    {
+      "v": 1,
+      "type": "state",
+      "time": "2026-09-14T15:32:32.931+09:00",
+      "host": "PC-LINE1",
+      "reader": "1번 저울",
+      "alias": "1번 저울",
+      "readerName": "ACS ACR1552 1S CL Reader PICC 0",
+      "serial": "RR657-005592",
+      "present": true,
+      "online": true,
+      "uid": "E0040150ABCDEF01",
+      "tech": "ISO 15693",
+      "state": "PRESENT"
+    }
+  ]
+}

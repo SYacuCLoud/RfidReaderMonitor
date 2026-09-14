@@ -47,6 +47,39 @@ public sealed class SqlSinkSettings
     public bool AutoCreateTable { get; set; } = true;
 }
 
+/// <summary>
+/// MQTT 브로커로 발행하는 출력. 실시간 현황판(Grid Tile Editor /live 등)이 구독한다.
+/// 토픽: {Prefix}/{Site}/reader/{리더S/N}/state (retained) · /event · {Prefix}/{Site}/host/{PC}/status (retained + LWT).
+/// </summary>
+public sealed class MqttSinkSettings
+{
+    public bool Enabled { get; set; }
+    public string Host { get; set; } = "";
+    public int Port { get; set; } = 1883;
+    public bool UseTls { get; set; }
+    /// <summary>자체 서명 인증서 브로커용. 서버 인증서 검증을 건너뛴다.</summary>
+    public bool IgnoreCertErrors { get; set; }
+    public string Username { get; set; } = "";
+    /// <summary>DPAPI(현재 사용자)로 보호된 비밀번호. 평문은 Password 로 다룬다.</summary>
+    public string PasswordProtected { get; set; } = "";
+    /// <summary>비우면 rfidmon-{PC이름}.</summary>
+    public string ClientId { get; set; } = "";
+    /// <summary>토픽 첫 마디. 여러 시스템이 한 브로커를 쓸 때 갈라 준다.</summary>
+    public string Prefix { get; set; } = "rfid";
+    /// <summary>사업장·라인 이름. 토픽 둘째 마디. 현황판이 이 이름으로 구독한다.</summary>
+    public string Site { get; set; } = "default";
+
+    [JsonIgnore]
+    public string Password
+    {
+        get => Mqtt.Secret.Unprotect(PasswordProtected);
+        set => PasswordProtected = Mqtt.Secret.Protect(value);
+    }
+
+    [JsonIgnore]
+    public string EffectiveClientId => string.IsNullOrWhiteSpace(ClientId) ? "rfidmon-" + Environment.MachineName : ClientId.Trim();
+}
+
 /// <summary>Modbus 데이터 영역.</summary>
 public enum ModbusArea
 {
@@ -226,6 +259,8 @@ public sealed class AppSettings
     public TcpClientSinkSettings TcpClient { get; set; } = new();
     public PipeSinkSettings Pipe { get; set; } = new();
     public SqlSinkSettings Sql { get; set; } = new();
+    /// <summary>MQTT 브로커 발행 출력. (구독 입력은 <see cref="Mqtt"/>.)</summary>
+    public MqttSinkSettings MqttSink { get; set; } = new();
 
     /// <summary>산업용 리더(Modbus TCP) 입력.</summary>
     public ModbusSettings Modbus { get; set; } = new();

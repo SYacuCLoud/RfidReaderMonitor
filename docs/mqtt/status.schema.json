@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SYacuCLoud/RfidReaderMonitor/main/docs/mqtt/status.schema.json",
+  "title": "RfidReaderMonitor host status",
+  "description": "감시 PC 한 대의 online/offline. 토픽 {prefix}/{site}/host/{host}/status 에 retained 로 발행된다. online 은 하트비트마다 감시 PC 가 내고, offline 은 정상 종료 때 감시 PC 가, 비정상 종료 때 브로커가 유언(LWT)으로 낸다.",
+  "type": "object",
+  "required": ["v", "type", "online", "host"],
+  "properties": {
+    "v": { "const": 1 },
+    "type": { "const": "status" },
+    "online": { "type": "boolean" },
+    "host": { "type": "string" },
+    "time": { "$ref": "state.schema.json#/$defs/time", "description": "하트비트 시각. offline 에는 없다 — 브로커가 대신 낼 때는 알 수 없다." },
+    "version": { "type": "string", "description": "RfidReaderMonitor 판." },
+    "readerCount": { "type": "integer", "minimum": 0 },
+    "onlineReaders": { "type": "integer", "minimum": 0 },
+    "presentReaders": { "type": "integer", "minimum": 0 },
+    "appearToday": { "type": "integer", "minimum": 0 },
+    "removeToday": { "type": "integer", "minimum": 0 }
+  },
+  "if": { "properties": { "online": { "const": true } } },
+  "then": { "required": ["time", "version", "readerCount", "onlineReaders", "presentReaders", "appearToday", "removeToday"] },
+  "additionalProperties": true,
+  "examples": [
+    {
+      "v": 1,
+      "type": "status",
+      "online": true,
+      "host": "PC-LINE1",
+      "time": "2026-09-14T15:32:33.931+09:00",
+      "version": "0.3.2",
+      "readerCount": 2,
+      "onlineReaders": 2,
+      "presentReaders": 1,
+      "appearToday": 5,
+      "removeToday": 4
+    },
+    { "v": 1, "type": "status", "online": false, "host": "PC-LINE1" }
+  ]
+}

@@ -211,6 +211,18 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _tcpClientStatusText = "꺼짐";
     [ObservableProperty] private string _tcpClientStatusColor = "#888888";
     [ObservableProperty, NotifyCanExecuteChangedFor(nameof(ToggleTcpClientCommand))] private bool _tcpClientCanToggle;
+    // MQTT 브로커 발행도 같은 버튼 + 옆 상태 패턴. 현황판(Grid Tile Editor /live)이 구독한다.
+    [ObservableProperty] private bool _mqttSinkEnabled;
+    [ObservableProperty] private string _mqttSinkHost = "";
+    [ObservableProperty] private int _mqttSinkPort = 1883;
+    [ObservableProperty] private string _mqttSinkSite = "";
+    [ObservableProperty] private string _mqttSinkUsername = "";
+    [ObservableProperty] private string _mqttSinkPassword = "";
+    [ObservableProperty] private bool _mqttSinkUseTls;
+    [ObservableProperty] private string _mqttSinkButtonText = "발행 시작";
+    [ObservableProperty] private string _mqttSinkStatusText = "꺼짐";
+    [ObservableProperty] private string _mqttSinkStatusColor = "#888888";
+    [ObservableProperty, NotifyCanExecuteChangedFor(nameof(ToggleMqttSinkCommand))] private bool _mqttSinkCanToggle;
     [ObservableProperty] private int _heartbeatSec;
     [ObservableProperty] private bool _autostartEnabled;
 
@@ -379,6 +391,13 @@ public sealed partial class MainViewModel : ObservableObject
         TcpClientEnabled = _settings.TcpClient.Enabled;
         TcpClientHost = _settings.TcpClient.Host;
         TcpClientPort = _settings.TcpClient.Port;
+        MqttSinkEnabled = _settings.MqttSink.Enabled;
+        MqttSinkHost = _settings.MqttSink.Host;
+        MqttSinkPort = _settings.MqttSink.Port;
+        MqttSinkSite = _settings.MqttSink.Site;
+        MqttSinkUsername = _settings.MqttSink.Username;
+        MqttSinkPassword = _settings.MqttSink.Password;
+        MqttSinkUseTls = _settings.MqttSink.UseTls;
         HeartbeatSec = _settings.HeartbeatSec;
         TestDurationSec = _settings.TestDurationSec;
         TestIntervalMs = _settings.TestIntervalMs;
@@ -456,6 +475,13 @@ public sealed partial class MainViewModel : ObservableObject
     partial void OnSqlTableChanged(string value) { UpdateSqlUi(); ScheduleSettingsSave(); }
     partial void OnSqlAutoCreateChanged(bool value) { UpdateSqlUi(); ScheduleSettingsSave(); }
     partial void OnSqlEnabledChanged(bool value) { UpdateSqlUi(); ScheduleSettingsSave(); }
+    partial void OnMqttSinkHostChanged(string value) { UpdateMqttSinkUi(); ScheduleSettingsSave(); }
+    partial void OnMqttSinkPortChanged(int value) { UpdateMqttSinkUi(); ScheduleSettingsSave(); }
+    partial void OnMqttSinkSiteChanged(string value) { UpdateMqttSinkUi(); ScheduleSettingsSave(); }
+    partial void OnMqttSinkUsernameChanged(string value) { UpdateMqttSinkUi(); ScheduleSettingsSave(); }
+    partial void OnMqttSinkPasswordChanged(string value) { UpdateMqttSinkUi(); ScheduleSettingsSave(); }
+    partial void OnMqttSinkUseTlsChanged(bool value) { UpdateMqttSinkUi(); ScheduleSettingsSave(); }
+    partial void OnMqttSinkEnabledChanged(bool value) { UpdateMqttSinkUi(); ScheduleSettingsSave(); }
 
     partial void OnModbusEnabledChanged(bool value) => ScheduleSettingsSave();
     partial void OnModbusTimeoutMsChanged(int value) => ScheduleSettingsSave();
@@ -850,7 +876,9 @@ public sealed partial class MainViewModel : ObservableObject
         _settings.Tcp.Enabled, _settings.Tcp.Port,
         _settings.Pipe.Enabled, _settings.Pipe.Name,
         _settings.TcpClient.Enabled, _settings.TcpClient.Host, _settings.TcpClient.Port,
-        _settings.Sql.Enabled, _settings.Sql.ConnectionString, _settings.Sql.Table, _settings.Sql.AutoCreateTable);
+        _settings.Sql.Enabled, _settings.Sql.ConnectionString, _settings.Sql.Table, _settings.Sql.AutoCreateTable,
+        _settings.MqttSink.Enabled, _settings.MqttSink.Host, _settings.MqttSink.Port, _settings.MqttSink.Site,
+        _settings.MqttSink.Username, _settings.MqttSink.PasswordProtected, _settings.MqttSink.UseTls);
 
     [RelayCommand]
     private async Task SaveSettings()
@@ -880,6 +908,14 @@ public sealed partial class MainViewModel : ObservableObject
         _settings.TcpClient.Enabled = TcpClientEnabled;
         _settings.TcpClient.Host = TcpClientHost.Trim();
         _settings.TcpClient.Port = TcpClientPort;
+        _settings.MqttSink.Enabled = MqttSinkEnabled;
+        _settings.MqttSink.Host = MqttSinkHost.Trim();
+        _settings.MqttSink.Port = MqttSinkPort;
+        _settings.MqttSink.Site = MqttSinkSite.Trim();
+        _settings.MqttSink.Username = MqttSinkUsername.Trim();
+        // 비밀번호는 바뀌었을 때만 다시 보호한다 (DPAPI 출력이 매번 달라 서명이 흔들리지 않게).
+        if (_settings.MqttSink.Password != MqttSinkPassword) _settings.MqttSink.Password = MqttSinkPassword;
+        _settings.MqttSink.UseTls = MqttSinkUseTls;
         _settings.HeartbeatSec = Math.Max(0, HeartbeatSec);
         _settings.TestDurationSec = TestDurationSec;
         _settings.TestIntervalMs = TestIntervalMs;
@@ -972,6 +1008,48 @@ public sealed partial class MainViewModel : ObservableObject
         (SqlStatusText, SqlStatusColor) = SinkStatusView(saved.Enabled, sink, sink?.IsConnected ?? false);
     }
 
+    /// <summary>MQTT 발행 버튼. 수집 PC 전송 버튼과 같은 동작(켜기 / 끄기 / 바꾼 설정으로 다시 시작).</summary>
+    [RelayCommand(CanExecute = nameof(MqttSinkCanToggle))]
+    private async Task ToggleMqttSink()
+    {
+        var saved = _settings.MqttSink;
+        if (!saved.Enabled || MqttSinkSettingsChanged())
+        {
+            if (string.IsNullOrWhiteSpace(MqttSinkHost)) { StatusMessage = "MQTT 브로커 주소를 입력하세요."; return; }
+            MqttSinkEnabled = true;
+        }
+        else
+        {
+            MqttSinkEnabled = false;
+        }
+        await SaveSettings();
+        StatusMessage = MqttSinkEnabled
+            ? $"MQTT 발행 시작: {_settings.MqttSink.Host}:{_settings.MqttSink.Port} → {_settings.MqttSink.Prefix}/{_settings.MqttSink.Site}/…"
+            : "MQTT 발행 중지";
+        UpdateMqttSinkUi();
+    }
+
+    private bool MqttSinkSettingsChanged()
+    {
+        var saved = _settings.MqttSink;
+        return MqttSinkHost.Trim() != saved.Host
+            || MqttSinkPort != saved.Port
+            || MqttSinkSite.Trim() != saved.Site
+            || MqttSinkUsername.Trim() != saved.Username
+            || MqttSinkPassword != saved.Password
+            || MqttSinkUseTls != saved.UseTls;
+    }
+
+    private void UpdateMqttSinkUi()
+    {
+        var saved = _settings.MqttSink;
+        MqttSinkCanToggle = saved.Enabled || !string.IsNullOrWhiteSpace(MqttSinkHost);
+        MqttSinkButtonText = !saved.Enabled ? "발행 시작" : MqttSinkSettingsChanged() ? "바꾼 설정으로 다시 시작" : "발행 중지";
+
+        var sink = _dispatcher.Sinks.OfType<MqttSink>().FirstOrDefault();
+        (MqttSinkStatusText, MqttSinkStatusColor) = SinkStatusView(saved.Enabled, sink, sink?.IsConnected ?? false);
+    }
+
     /// <summary>버튼 옆 상태 글자와 색. 회색 = 꺼짐/시작 안 됨, 녹색 = 붙어 있음, 주황 = 끊겨서 재시도 중.</summary>
     private static (string Text, string Color) SinkStatusView(bool enabled, SinkBase? sink, bool connected)
     {
@@ -992,6 +1070,8 @@ public sealed partial class MainViewModel : ObservableObject
             try { sinks.Add(new SqlServerSink(_settings.Sql.ConnectionString, _settings.Sql.Table, _settings.Sql.AutoCreateTable, _settings.EffectiveQueueFolder)); }
             catch (Exception ex) { StatusMessage = "SQL 싱크 구성 오류: " + ex.Message; }
         }
+        if (_settings.MqttSink.Enabled && !string.IsNullOrWhiteSpace(_settings.MqttSink.Host))
+            sinks.Add(new MqttSink(_settings.MqttSink, _settings.EffectiveQueueFolder));
 
         SinkStatuses.Clear();
         foreach (var s in sinks)
@@ -1003,6 +1083,7 @@ public sealed partial class MainViewModel : ObservableObject
                 row.Status = sink.Status;
                 if (sink is TcpClientSink) UpdateTcpClientUi();
                 else if (sink is SqlServerSink) UpdateSqlUi();
+                else if (sink is MqttSink) UpdateMqttSinkUi();
             });
         }
         await _dispatcher.ReconfigureAsync(sinks);
@@ -1019,6 +1100,7 @@ public sealed partial class MainViewModel : ObservableObject
         RefreshDashboardSinks();
         UpdateTcpClientUi();
         UpdateSqlUi();
+        UpdateMqttSinkUi();
     }
 
     // ------------------------------------------------------------ 명령: 산업용 리더 (Modbus TCP)

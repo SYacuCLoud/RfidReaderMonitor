@@ -35,6 +35,7 @@ public sealed record TagEvent(
 
     public string ToJson() => JsonSerializer.Serialize(new
     {
+        v = Envelope.Version,
         type = "event",
         time = Time.ToString("yyyy-MM-ddTHH:mm:ss.fffzzz"),
         kind = KindCode,

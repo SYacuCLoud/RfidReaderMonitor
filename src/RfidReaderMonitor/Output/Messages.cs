@@ -24,6 +24,7 @@ public sealed record HeartbeatMessage(
 
     public string ToJson() => JsonSerializer.Serialize(new
     {
+        v = Envelope.Version,
         type = "heartbeat",
         time = Time.ToString("yyyy-MM-ddTHH:mm:ss.fffzzz"),
         host = Host,
@@ -37,6 +38,13 @@ public sealed record HeartbeatMessage(
 /// <summary>JSON 한 줄을 이벤트 또는 하트비트로 해석.</summary>
 public static class Envelope
 {
+    /// <summary>
+    /// 바깥으로 나가는 모든 JSON(이벤트 · 하트비트 · MQTT state/status)의 형식 판. 필드마다 `v` 로 실린다.
+    /// 필드를 지우거나 뜻을 바꾸면 올린다. 더하기만 하면 그대로 둔다 — 소비자는 모르는 필드를 무시한다.
+    /// 스키마: docs/mqtt/*.schema.json
+    /// </summary>
+    public const int Version = 1;
+
     internal static readonly JsonSerializerOptions JsonOpts = new()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
