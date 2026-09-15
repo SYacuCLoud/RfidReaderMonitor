@@ -28,6 +28,10 @@ public sealed class MqttSink : SinkBase
     private readonly string _queueFolder;
     private readonly string _host = Environment.MachineName;
     private readonly ConcurrentDictionary<string, ReaderState> _states = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>리더 이름 → 마지막으로 읽은 S/N. 뽑힌 순간에는 S/N 을 못 읽으므로 이것으로 같은 키를 유지한다.</summary>
+    private readonly ConcurrentDictionary<string, string> _serialByName = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>S/N 을 알게 된 뒤 이름 · 별명 키 토픽을 한 번 지운 리더. 예전 판이 남긴 유령 retained 를 치우는 용도.</summary>
+    private readonly ConcurrentDictionary<string, byte> _staleCleared = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _pubLock = new(1, 1);
     private IMqttClient? _client;
     private OutboxQueue? _queue;
@@ -68,6 +72,49 @@ public sealed class MqttSink : SinkBase
         if (!string.IsNullOrWhiteSpace(serial)) return Segment(serial);
         if (!string.IsNullOrWhiteSpace(alias)) return Segment(alias);
         return Segment(readerName);
+    }
+
+    /// <summary>
+    /// 키와 S/N 을 정한다. S/N 이 비어 있어도(뽑힘 · 재열거 순간) 같은 이름으로 전에 읽은 S/N 이 있으면 그것을 쓴다.
+    /// 그래야 뽑힌 상태가 **같은 토픽**에 실리고, 이름 키의 유령 토픽이 생기지 않는다.
+    /// </summary>
+    internal (string Key, string Serial) ResolveKey(string serial, string alias, string readerName)
+    {
+        var name = readerName.Trim();
+        if (!string.IsNullOrWhiteSpace(serial))
+        {
+            if (name.Length > 0) _serialByName[name] = serial.Trim();
+            return (ReaderKey(serial, alias, readerName), serial.Trim());
+        }
+        if (name.Length > 0 && _serialByName.TryGetValue(name, out var known))
+            return (ReaderKey(known, alias, readerName), known);
+        return (ReaderKey(serial, alias, readerName), serial);
+    }
+
+    /// <summary>S/N 없이 냈을 때 쓰였을 키들(별명 · 이름). S/N 키와 같은 것은 뺀다.</summary>
+    internal static IEnumerable<string> StaleKeysFor(string alias, string readerName, string serialKey)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { serialKey };
+        foreach (var raw in new[] { alias, readerName })
+        {
+            if (string.IsNullOrWhiteSpace(raw)) continue;
+            var key = Segment(raw);
+            if (seen.Add(key)) yield return key;
+        }
+    }
+
+    /// <summary>
+    /// S/N 을 알게 된 리더의 이름 · 별명 키 토픽을 빈 retained 로 지운다(프로세스마다 한 번).
+    /// 이 판 이전에 뽑힌 순간 이름 키로 남긴 `뽑힘` 상태가 브로커에 영원히 남아 현황판에 "미배치 리더" 로 떠 있었다.
+    /// </summary>
+    private async Task ClearStaleKeysAsync(string alias, string readerName, string serialKey, CancellationToken ct)
+    {
+        if (!_staleCleared.TryAdd(serialKey, 0)) return;
+        foreach (var stale in StaleKeysFor(alias, readerName, serialKey))
+        {
+            _states.TryRemove(stale, out _);
+            await PublishIfConnectedAsync(StateTopic(stale), "", retain: true, ct);
+        }
     }
 
     // ------------------------------------------------------------ 시작 · 접속
@@ -161,14 +208,15 @@ public sealed class MqttSink : SinkBase
 
     public override async Task PublishAsync(TagEvent e, CancellationToken ct)
     {
-        var key = ReaderKey(e.Serial, e.Alias, e.ReaderName);
+        var (key, serial) = ResolveKey(e.Serial, e.Alias, e.ReaderName);
         // 이벤트는 큐로(순서 · 최소 1회). 큐 줄에 키를 붙여 두어 보낼 때 토픽을 다시 셈하지 않는다.
         _queue?.Enqueue(JsonSerializer.Serialize(new { key, line = e.ToJson() }, Envelope.JsonOpts));
 
         // 상태는 바로(마지막 값만 의미 있다). 끊겨 있으면 접속 뒤 RepublishAll 이 낸다.
         var present = e.Kind == TagEventKind.Appear;
-        var next = new ReaderState(key, e.ReaderName, e.Alias, e.Serial, present, true,
+        var next = new ReaderState(key, e.ReaderName, e.Alias, serial, present, true,
             present ? e.Uid : "", present ? e.Tech : "", present ? "PRESENT" : "EMPTY", e.Time);
+        if (serial.Length > 0) await ClearStaleKeysAsync(e.Alias, e.ReaderName, key, ct);
         await UpsertStateAsync(next, ct);
     }
 
@@ -178,14 +226,16 @@ public sealed class MqttSink : SinkBase
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in hb.Readers)
         {
-            var key = ReaderKey(r.Serial, r.Alias, r.Name);
+            // 뽑힌 리더는 S/N 이 비어 온다. 전에 읽어 둔 S/N 으로 같은 키를 유지해야 "그 자리가 비었다" 가 된다.
+            var (key, serial) = ResolveKey(r.Serial, r.Alias, r.Name);
             seen.Add(key);
             var present = r.State.StartsWith("PRESENT", StringComparison.Ordinal);
             var online = r.State is not ("뽑힘" or "사용불가" or "?");
             _states.TryGetValue(key, out var prev);
-            var next = new ReaderState(key, r.Name, r.Alias, r.Serial, present, online,
+            var next = new ReaderState(key, r.Name, r.Alias, serial, present, online,
                 present ? (string.IsNullOrEmpty(r.Uid) ? prev?.Uid ?? "" : r.Uid) : "",
                 present ? prev?.Tech ?? "" : "", r.State, hb.Time);
+            if (serial.Length > 0) await ClearStaleKeysAsync(r.Alias, r.Name, key, ct);
             await UpsertStateAsync(next, ct);
         }
         // 목록에서 사라진 리더(뽑힘 뒤 제거)는 offline 으로 남긴다. 지우지는 않는다 — 화면이 "있던 자리가 비었다" 를 알아야 한다.

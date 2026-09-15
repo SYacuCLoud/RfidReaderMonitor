@@ -148,4 +148,33 @@ public sealed class MqttPayloadSchemaTests
     {
         Assert.Equal(expected, MqttSink.ReaderKey(serial, alias, name));
     }
+
+    [Fact]
+    public void Unplugged_reader_keeps_its_serial_key()
+    {
+        var sink = new MqttSink(new RfidReaderMonitor.Settings.MqttSinkSettings(), Path.GetTempPath());
+
+        // 꽂혀 있을 때 S/N 을 읽었다.
+        var live = sink.ResolveKey("RR657-005586", "07-02", "ACS ACR1552 1S CL Reader PICC 0");
+        Assert.Equal(("RR657-005586", "RR657-005586"), live);
+
+        // 뽑힌 순간 S/N 이 비어 와도 같은 키 · 같은 S/N 이다 — 이름 키의 유령 토픽이 생기지 않는다.
+        var unplugged = sink.ResolveKey("", "07-02", "ACS ACR1552 1S CL Reader PICC 0");
+        Assert.Equal(("RR657-005586", "RR657-005586"), unplugged);
+
+        // 한 번도 S/N 을 못 읽은 리더는 예전 규칙(별명 → 이름)대로.
+        Assert.Equal(("13", ""), sink.ResolveKey("", "13", "ACS ACR1552 1S CL Reader PICC 1"));
+        Assert.Equal(("ACS_ACR1552_1S_CL_Reader_PICC_2", ""), sink.ResolveKey("", "", "ACS ACR1552 1S CL Reader PICC 2"));
+    }
+
+    [Fact]
+    public void Stale_keys_are_alias_and_name_but_never_the_serial_key()
+    {
+        Assert.Equal(new[] { "07-02", "ACS_ACR1552_1S_CL_Reader_PICC_0" },
+            MqttSink.StaleKeysFor("07-02", "ACS ACR1552 1S CL Reader PICC 0", "RR657-005586"));
+        Assert.Equal(new[] { "ACS_ACR1552_1S_CL_Reader_PICC_0" },
+            MqttSink.StaleKeysFor("", "ACS ACR1552 1S CL Reader PICC 0", "RR657-005586"));
+        // 별명이 S/N 과 같으면 지우지 않는다(자기 토픽).
+        Assert.Empty(MqttSink.StaleKeysFor("RR657-005586", "", "RR657-005586"));
+    }
 }
