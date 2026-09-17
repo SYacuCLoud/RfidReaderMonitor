@@ -15,17 +15,9 @@ public sealed class MqttPayloadSchemaTests
 {
     private static readonly string SchemaDir = Path.Combine(AppContext.BaseDirectory, "schemas");
 
+    // 스키마는 TestSchemas 가 프로세스에 한 번만 읽는다(같은 $id 를 두 번 등록하면 JsonSchema.Net 이 던진다).
     private static readonly Lazy<(JsonSchema State, JsonSchema Event, JsonSchema Status)> Schemas = new(() =>
-    {
-        var state = JsonSchema.FromFile(Path.Combine(SchemaDir, "state.schema.json"));
-        var ev = JsonSchema.FromFile(Path.Combine(SchemaDir, "event.schema.json"));
-        var status = JsonSchema.FromFile(Path.Combine(SchemaDir, "status.schema.json"));
-        // event · status 는 state 의 $defs/time 을 $id 기준 상대 경로로 참조한다. 등록해 두어야 풀린다.
-        SchemaRegistry.Global.Register(state);
-        SchemaRegistry.Global.Register(ev);
-        SchemaRegistry.Global.Register(status);
-        return (state, ev, status);
-    });
+        (TestSchemas.Get("state"), TestSchemas.Get("event"), TestSchemas.Get("status")));
 
     private static readonly EvaluationOptions Options = new() { OutputFormat = OutputFormat.List };
 

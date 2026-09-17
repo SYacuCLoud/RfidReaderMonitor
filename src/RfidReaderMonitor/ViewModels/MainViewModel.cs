@@ -1071,7 +1071,8 @@ public sealed partial class MainViewModel : ObservableObject
             catch (Exception ex) { StatusMessage = "SQL 싱크 구성 오류: " + ex.Message; }
         }
         if (_settings.MqttSink.Enabled && !string.IsNullOrWhiteSpace(_settings.MqttSink.Host))
-            sinks.Add(new MqttSink(_settings.MqttSink, _settings.EffectiveQueueFolder));
+            // CSV 폴더는 재발행 요청(현황판이 놓친 구간 다시 내기)의 재료. CSV 출력이 꺼져 있어도 예전 파일은 읽을 수 있다.
+            sinks.Add(new MqttSink(_settings.MqttSink, _settings.EffectiveQueueFolder, _settings.EffectiveCsvFolder));
 
         SinkStatuses.Clear();
         foreach (var s in sinks)

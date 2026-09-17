@@ -19,14 +19,25 @@ namespace RfidReaderMonitor.Output;
 ///    로컬 재전송 큐를 거치므로 브로커가 꺼져 있어도 순서대로 뒤에 나간다.
 ///  - {prefix}/{site}/host/{PC}/status        retained + LWT. 하트비트마다 online:true, 끊기면 브로커가 online:false 를 대신 낸다.
 ///
+/// 재발행(v0.5.0): 구독자가 놓친 구간을 `{prefix}/{site}/replay` · `{prefix}/{site}/host/{PC}/replay` 로 요청하면
+/// CSV 출력(events-yyyyMMdd.csv)에서 그 구간을 읽어 `{prefix}/{site}/reader/{key}/replay` 로 다시 내고
+/// `{prefix}/{site}/host/{PC}/replay-done` 으로 끝을 알린다(<see cref="ReplayRequest"/>). 이벤트 토픽이 아니라 별도 토픽이라
+/// 현황판의 "지금 상태" 는 흔들리지 않고, 이력을 쌓는 쪽만 구독해 받는다.
+///
 /// 리더 키는 S/N 이고(Grid Tile Editor 장치 대장의 S/N 과 같은 값), S/N 이 없으면 별명 → 이름 순으로 대신 쓴다.
-/// 이력·집계는 여기서 하지 않는다 — SQL Server 싱크가 맡는다. MQTT 는 "지금" 만 전한다.
+/// 이력·집계는 여기서 하지 않는다 — SQL Server 싱크가 맡는다. MQTT 는 "지금" 만 전한다(재발행은 CSV 를 읽어 줄 뿐이다).
 /// </summary>
 public sealed class MqttSink : SinkBase
 {
     private readonly MqttSinkSettings _s;
     private readonly string _queueFolder;
+    /// <summary>재발행이 읽는 CSV 출력 폴더. null 이면 재발행 요청에 답하지 않는다.</summary>
+    private readonly string? _csvFolder;
     private readonly string _host = Environment.MachineName;
+    private readonly SemaphoreSlim _replayLock = new(1, 1);
+    /// <summary>최근에 처리한 요청 id — 브로커의 QoS 1 재전송으로 같은 요청을 두 번 돌리지 않는다.</summary>
+    private readonly ConcurrentQueue<string> _recentReplays = new();
+    private string? _lastReplay;
     private readonly ConcurrentDictionary<string, ReaderState> _states = new(StringComparer.OrdinalIgnoreCase);
     /// <summary>리더 이름 → 마지막으로 읽은 S/N. 뽑힌 순간에는 S/N 을 못 읽으므로 이것으로 같은 키를 유지한다.</summary>
     private readonly ConcurrentDictionary<string, string> _serialByName = new(StringComparer.OrdinalIgnoreCase);
@@ -45,10 +56,11 @@ public sealed class MqttSink : SinkBase
     /// <summary>브로커와 세션이 붙어 있는지. 끊겨 있어도 이벤트는 큐에 쌓이고 상태는 접속 뒤 다시 낸다.</summary>
     public bool IsConnected => _client?.IsConnected == true;
 
-    public MqttSink(MqttSinkSettings settings, string queueFolder)
+    public MqttSink(MqttSinkSettings settings, string queueFolder, string? csvFolder = null)
     {
         _s = settings;
         _queueFolder = queueFolder;
+        _csvFolder = csvFolder;
     }
 
     // ------------------------------------------------------------ 토픽
@@ -58,6 +70,12 @@ public sealed class MqttSink : SinkBase
     private string HostStatusTopic => $"{Prefix}/{Site}/host/{Segment(_host)}/status";
     private string StateTopic(string key) => $"{Prefix}/{Site}/reader/{key}/state";
     private string EventTopic(string key) => $"{Prefix}/{Site}/reader/{key}/event";
+    /// <summary>재발행 이벤트. `…/event` 와 페이로드는 같고 토픽만 다르다.</summary>
+    private string ReplayEventTopic(string key) => $"{Prefix}/{Site}/reader/{key}/replay";
+    /// <summary>재발행 요청을 받는 두 토픽 — 사업장 전체용과 이 PC 용.</summary>
+    internal string SiteReplayTopic => $"{Prefix}/{Site}/replay";
+    internal string HostReplayTopic => $"{Prefix}/{Site}/host/{Segment(_host)}/replay";
+    private string ReplayDoneTopic => $"{Prefix}/{Site}/host/{Segment(_host)}/replay-done";
 
     /// <summary>토픽 한 마디로 쓸 수 있게 다듬는다. 구분자 · 와일드카드 · 공백은 _ 로.</summary>
     internal static string Segment(string raw)
@@ -139,6 +157,19 @@ public sealed class MqttSink : SinkBase
             UpdateStatus();
             // 끊겨 있는 동안 바뀐 상태를 한꺼번에 다시 낸다. retained 라 마지막 값만 남는다.
             await RepublishAllAsync(_cts.Token);
+            // clean session 이라 접속마다 다시 구독한다.
+            await SubscribeReplayAsync(client, _cts.Token);
+        };
+        client.ApplicationMessageReceivedAsync += e =>
+        {
+            var topic = e.ApplicationMessage.Topic;
+            if (topic == SiteReplayTopic || topic == HostReplayTopic)
+            {
+                var payload = System.Text.Encoding.UTF8.GetString(System.Buffers.BuffersExtensions.ToArray(e.ApplicationMessage.Payload));
+                // 처리는 따로 돈다 — 수신 콜백을 오래 잡으면 브로커 ack 가 늦어진다.
+                _ = Task.Run(() => HandleReplayRequestAsync(payload, _cts?.Token ?? CancellationToken.None));
+            }
+            return Task.CompletedTask;
         };
         _client = client;
 
@@ -312,6 +343,84 @@ public sealed class MqttSink : SinkBase
         if (_lastHeartbeat is not null) await PublishHostStatusAsync(_lastHeartbeat, ct);
     }
 
+    // ------------------------------------------------------------ 재발행
+
+    private async Task SubscribeReplayAsync(IMqttClient client, CancellationToken ct)
+    {
+        if (_csvFolder is null) return;
+        try
+        {
+            var opts = new MqttClientSubscribeOptionsBuilder()
+                .WithTopicFilter(SiteReplayTopic, MqttQualityOfServiceLevel.AtLeastOnce)
+                .WithTopicFilter(HostReplayTopic, MqttQualityOfServiceLevel.AtLeastOnce)
+                .Build();
+            await client.SubscribeAsync(opts, ct);
+            Log.Debug("MQTT 재발행 요청 구독 {Site} · {Host}", SiteReplayTopic, HostReplayTopic);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.Warning("MQTT 재발행 요청 구독 실패: {Msg}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 요청 하나를 처리한다: 해석 → 이 PC 대상인지 → CSV 읽기 → 이벤트마다 `…/replay` 발행 → `…/replay-done`.
+    /// 한 번에 하나만 돈다. 같은 requestId 는 한 번만(브로커 재전송).
+    /// </summary>
+    internal async Task HandleReplayRequestAsync(string payload, CancellationToken ct)
+    {
+        if (_csvFolder is null) return;
+        if (!ReplayRequest.TryParse(payload, out var req, out var error) || req is null)
+        {
+            Log.Warning("MQTT 재발행 요청을 읽을 수 없음: {Error} — {Payload}", error, payload.Length > 200 ? payload[..200] : payload);
+            return;
+        }
+        if (!req.IsFor(_host)) return;
+        if (_recentReplays.Contains(req.RequestId)) return;
+        _recentReplays.Enqueue(req.RequestId);
+        while (_recentReplays.Count > 50) _recentReplays.TryDequeue(out _);
+
+        await _replayLock.WaitAsync(ct);
+        try
+        {
+            Log.Information("MQTT 재발행 요청 {Id}: {From:o} ~ {To:o}", req.RequestId, req.From, req.To);
+            List<TagEvent> events;
+            int files;
+            bool truncated;
+            try
+            {
+                (events, files, truncated) = ReplayCsv.Read(_csvFolder, req, _host);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("MQTT 재발행 CSV 읽기 실패: {Msg}", ex.Message);
+                await PublishIfConnectedAsync(ReplayDoneTopic, new ReplayDone(_host, req.RequestId, req.From, req.To, 0, false, 0, "CSV 읽기 실패: " + ex.Message).ToJson(), retain: false, ct);
+                return;
+            }
+
+            int sent = 0;
+            foreach (var e in events)
+            {
+                ct.ThrowIfCancellationRequested();
+                var c = _client;
+                if (c is null || !c.IsConnected) break; // 끊겼으면 여기서 멈춘다. 요청자가 done 의 count 로 안다.
+                var key = ReaderKey(e.Serial, e.Alias, e.ReaderName);
+                await PublishIfConnectedAsync(ReplayEventTopic(key), e.ToJson(), retain: false, ct);
+                sent++;
+            }
+            _lastReplay = $"재발행 {sent}건 ({req.From.ToLocalTime():MM-dd HH:mm}~{req.To.ToLocalTime():MM-dd HH:mm})";
+            UpdateStatus();
+            Log.Information("MQTT 재발행 {Id}: {Sent}/{Total}건, 파일 {Files}{Truncated}", req.RequestId, sent, events.Count, files, truncated ? ", 최대에 걸림" : "");
+            await PublishIfConnectedAsync(ReplayDoneTopic, new ReplayDone(_host, req.RequestId, req.From, req.To, sent, truncated, files,
+                sent < events.Count ? $"접속이 끊겨 {events.Count - sent}건을 못 냄" : null).ToJson(), retain: false, ct);
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            _replayLock.Release();
+        }
+    }
+
     /// <summary>재전송 큐가 부른다. 접속이 없으면 false 를 돌려 큐가 뒤에 다시 시도하게 한다.</summary>
     private async Task<bool> SendQueuedAsync(string line, CancellationToken ct)
     {
@@ -360,7 +469,7 @@ public sealed class MqttSink : SinkBase
         var pending = _queue?.Pending ?? 0;
         var where = $"{_s.Host.Trim()}:{_s.Port} {Prefix}/{Site}";
         Status = IsConnected
-            ? $"{where} 연결됨, 리더 {_states.Count}, 대기 {pending}"
+            ? $"{where} 연결됨, 리더 {_states.Count}, 대기 {pending}{(_lastReplay is null ? "" : ", " + _lastReplay)}"
             : $"{where} 연결 안 됨, 재시도 중 (대기 {pending}){(_lastError is null ? "" : " - " + _lastError)}";
     }
 

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SYacuCLoud/RfidReaderMonitor/main/docs/mqtt/replay-done.schema.json",
+  "title": "RfidReaderMonitor replay done",
+  "description": "재발행이 끝났다는 알림. 토픽 {prefix}/{site}/host/{host}/replay-done (retained 아님, QoS 1).",
+  "type": "object",
+  "required": ["v", "type", "host", "requestId", "from", "to", "count", "truncated", "files"],
+  "properties": {
+    "v": { "const": 1 },
+    "type": { "const": "replay-done" },
+    "host": { "type": "string", "description": "답한 감시 PC 이름." },
+    "requestId": { "type": "string" },
+    "from": { "$ref": "state.schema.json#/$defs/time" },
+    "to": { "$ref": "state.schema.json#/$defs/time" },
+    "count": { "type": "integer", "minimum": 0, "description": "다시 낸 이벤트 수." },
+    "truncated": { "type": "boolean", "description": "최대 건수(20000)에 걸려 앞부분만 냈으면 true." },
+    "files": { "type": "integer", "minimum": 0, "description": "읽은 CSV 파일 수(구간이 걸친 날 중 파일이 있던 날)." },
+    "error": { "type": ["string", "null"], "description": "요청을 처리하지 못한 이유. 성공이면 없거나 null." }
+  },
+  "additionalProperties": true,
+  "examples": [
+    { "v": 1, "type": "replay-done", "host": "PC-LINE1", "requestId": "k3j9x2", "from": "2026-09-17T16:31:00.000+09:00", "to": "2026-09-18T07:05:00.000+09:00", "count": 412, "truncated": false, "files": 2 }
+  ]
+}

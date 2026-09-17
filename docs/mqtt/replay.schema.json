@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SYacuCLoud/RfidReaderMonitor/main/docs/mqtt/replay.schema.json",
+  "title": "RfidReaderMonitor replay request",
+  "description": "구독자가 놓친 구간의 이벤트를 다시 내 달라는 요청. 토픽 {prefix}/{site}/replay (사업장의 모든 감시 PC) 또는 {prefix}/{site}/host/{host}/replay (한 PC). 감시 PC 는 자기 CSV 출력에서 구간을 읽어 {prefix}/{site}/reader/{key}/replay 로 이벤트(event 와 같은 페이로드)를 다시 내고, {prefix}/{site}/host/{host}/replay-done 으로 끝을 알린다.",
+  "type": "object",
+  "required": ["v", "type", "from", "to"],
+  "properties": {
+    "v": { "const": 1 },
+    "type": { "const": "replay" },
+    "from": { "$ref": "state.schema.json#/$defs/time", "description": "구간 시작(포함)." },
+    "to": { "$ref": "state.schema.json#/$defs/time", "description": "구간 끝(포함). from 보다 뒤여야 하고 폭은 31일까지." },
+    "requestId": { "type": "string", "description": "요청을 구별하는 글자. done 에 그대로 실린다. 비우면 감시 PC 가 만든다." },
+    "host": { "type": "string", "description": "이 PC 만 답하라는 이름. 비우면 토픽을 받은 모든 PC 가 답한다." }
+  },
+  "additionalProperties": true,
+  "examples": [
+    { "v": 1, "type": "replay", "from": "2026-09-17T16:31:00.000+09:00", "to": "2026-09-18T07:05:00.000+09:00", "requestId": "k3j9x2" }
+  ]
+}
